@@ -239,14 +239,14 @@
         store,
         title = 'Panel',
         eventName = 'tm_panel_update',
-        getDisplayId = item => item.id,
         renderItemContent = null,
         renderPreview = null,
         filterFn = null,
         exportFileName = 'export.json',
         disableSearch = false,
         width = 300,
-        height = 500
+        height = 500,
+        normalize = (item) => item, // Default: return as is        
     }) {
         const state = { currentPage: 1, perPage: 20 };
         let panel, content, pagination, modal, modalContent;
@@ -271,19 +271,30 @@
             if (!paginated.length) {
                 content.innerHTML = '<i style="padding:10px; color:#666;">No items found.</i>';
             } else {
-                paginated.forEach(item => {
+                paginated.forEach(rawItem => {
+                    // Normalize the item here
+                    const item = normalize(rawItem);
+
                     const div = document.createElement('div');
                     Object.assign(div.style, {
                         marginBottom: '10px', padding: '8px', borderRadius: '4px',
                         position: 'relative', cursor: 'pointer', borderBottom: '1px solid #eee'
                     });
 
-                    // Correct styling for ID and Created date
+                    // Now we can use standard keys regardless of the API source
                     div.innerHTML = `
-                    <div><strong>ID:</strong> ${getDisplayId(item)}</div>
-                    <div><strong>Created:</strong> ${item.created_at ? new Date(item.created_at).toLocaleString() : '—'
-                        }</div>
-                `;
+                        <div style="font-size:12px; font-weight:bold; color:#333;">ID: ${item.id}</div>
+                        <div style="font-size:11px; color:#666;">${new Date(item.date).toLocaleString()}</div>
+                        <div style="font-size:11px; color:#007bff; text-transform:uppercase;">${item.type}</div>
+                    `;
+
+                    // Render thumbnail if it exists
+                    if (item.thumbnail) {
+                        const img = document.createElement('img');
+                        img.src = item.thumbnail;
+                        img.style.cssText = 'width:80px; height:auto; margin-top:5px; border-radius:4px; display:block;';
+                        div.appendChild(img);
+                    }
 
                     if (renderItemContent) renderItemContent(div, item);
 
