@@ -866,43 +866,39 @@
         }
 
         async init() {
-            const self = this;
             window.fetch = async (input, init = {}) => {
                 const url = typeof input === 'string' ? input : input.url;
+                const method = init.method || 'GET';
 
-                // 1. Check if we should intercept
-                // We pass a minimal "xhr-like" object for compatibility with your existing logic
-                const context = { url, method: init.method || 'GET', headers: init.headers || {} };
-
-                if (!this.config.shouldIntercept(context)) {
+                if (!this.config.shouldIntercept({ url, method })) {
                     return this.config.OriginalFetch(input, init);
                 }
 
                 try {
                     let requestData = {
                         url: url,
-                        method: init.method || 'GET',
+                        method: method,
                         headers: init.headers || {},
                         body: init.body
                     };
 
-                    // 2. onRequest Hook
+                    // 1. onRequest + shortCircuit
                     if (typeof this.config.onRequest === 'function') {
                         const modified = await this.config.onRequest(requestData);
-
-                        // Handle Short Circuit
                         if (modified?.shortCircuit) {
                             return new Response(
-                                typeof modified.response === 'string'
-                                    ? modified.response
-                                    : JSON.stringify(modified.response),
-                                { status: 200, statusText: 'OK', headers: { 'Content-Type': 'application/json' } }
+                                typeof modified.response === 'string' ? modified.response : JSON.stringify(modified.response),
+                                {
+                                    status: 200,
+                                    // Explicitly provide headers to avoid .get() errors later
+                                    headers: { 'Content-Type': 'application/json' }
+                                }
                             );
                         }
                         if (modified) requestData = modified;
                     }
 
-                    // 3. Execute real Fetch
+                    // 2. Execute Fetch
                     const response = await this.config.OriginalFetch(requestData.url, {
                         ...init,
                         method: requestData.method,
@@ -910,16 +906,16 @@
                         body: requestData.body
                     });
 
-                    // 4. onResponse Hook
+                    // 3. onResponse + Access to Body
                     if (typeof this.config.onResponse === 'function') {
-                        // Clone response so we don't lock the stream
+                        // Clone response safely
                         const clonedResponse = response.clone();
                         let data = await this._parseResponse(clonedResponse);
 
-                        // We pass 'requestData' as the second arg to match your XHR 'this' context
                         const modifiedBody = await this.config.onResponse(data, {
                             url: requestData.url,
-                            requestBody: requestData.body
+                            method: requestData.method,
+                            requestBody: requestData.body // Access to param body
                         });
 
                         if (modifiedBody !== undefined) {
@@ -928,27 +924,43 @@
                                 {
                                     status: response.status,
                                     statusText: response.statusText,
-                                    headers: response.headers
+                                    headers: response.headers // Use original response headers
                                 }
                             );
                         }
                     }
 
                     return response;
-
                 } catch (err) {
                     if (typeof this.config.onError === 'function') {
                         this.config.onError(err, { url });
                     }
+                    // Don't swallow the error, let the app handle the fallback
                     throw err;
                 }
             };
         }
 
         async _parseResponse(response) {
-            const contentType = response.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) return response.json();
-            return response.text();
+            // SAFETY FIX: Check if headers and get() exist
+            const getHeader = (name) => {
+                if (response.headers && typeof response.headers.get === 'function') {
+                    return response.headers.get(name);
+                }
+                return null;
+            };
+
+            const contentType = getHeader('content-type') || '';
+
+            try {
+                if (contentType.includes('application/json')) {
+                    return await response.json();
+                }
+                return await response.text();
+            } catch (e) {
+                // If parsing fails (common with RSC streams), fallback to text
+                return await response.text();
+            }
         }
     }
 
