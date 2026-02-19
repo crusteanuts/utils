@@ -235,7 +235,7 @@
      * 🧱 Generic Panel Tool Factory
      *********************************************************/
     function createPanelTool({
-        className = 'pixverse-panel',
+        className = 'tmutils-panel',
         store,
         title = 'Panel',
         eventName = 'tm_panel_update',
@@ -396,13 +396,14 @@
                 Object.assign(panel.style, {
                     position: 'fixed', bottom: '50px', right: '60px', width: `${width}px`, height: `${height}px`,
                     background: '#fff', boxShadow: '0 0 10px rgba(0,0,0,0.2)', borderRadius: '6px',
-                    display: 'none', flexDirection: 'column', zIndex: '99999', fontFamily: 'sans-serif', fontSize: '14px'
+                    display: 'none', flexDirection: 'column', zIndex: '99999', fontFamily: 'sans-serif', fontSize: '14px',
                 });
 
                 const header = document.createElement('div');
                 Object.assign(header.style, {
                     padding: '8px', fontWeight: 'bold', background: '#f3f3f3', borderBottom: '1px solid #ddd',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    color: '#333'
                 });
 
                 const titleEl = document.createElement('span');
