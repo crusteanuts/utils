@@ -314,10 +314,19 @@
 
                     // Now we can use standard keys regardless of the API source
                     div.innerHTML = `
-                        <div style="font-size:12px; font-weight:bold; color:#333;">ID: ${item.id}</div>
-                        <div style="font-size:11px; color:#666;">${new Date(item.date).toLocaleString()}</div>
-                        <div style="font-size:11px; color:#007bff; text-transform:uppercase;">${item.type}</div>
-                    `;
+    <div style="
+        font-size: 12px; 
+        font-weight: bold; 
+        color: #000; 
+        white-space: nowrap; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        max-width: 180px;
+    " title="${item.id}">ID: ${item.id}</div>
+    
+    <div style="font-size: 11px; color: #000;">${new Date(item.date).toLocaleString()}</div>
+    <div style="font-size: 11px; color: #007bff; text-transform: uppercase;">${item.type}</div>
+`;
 
                     // Render thumbnail if it exists
                     if (item.thumbnail) {
