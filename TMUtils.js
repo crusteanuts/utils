@@ -867,12 +867,12 @@
         async init() {
             const self = this;
             window.fetch = async function (input, init) {
-                // 1. Extract URL and Method safely
+                // 1. Determine URL and Method safely
                 const url = typeof input === 'string' ? input : (input?.url || '');
                 const method = (init?.method || input?.method || 'GET').toUpperCase();
 
-                // 2. ONLY intercept if shouldIntercept returns true
-                // If it's a page navigation or RSC call, let it pass through!
+                // 2. BYPASS logic: If we shouldn't touch this, get out immediately.
+                // This prevents interfering with Next.js/RSC internal logic.
                 if (!self.config.shouldIntercept({ url, method })) {
                     return self.config.OriginalFetch(input, init);
                 }
@@ -905,15 +905,22 @@
                         body: requestData.body
                     });
 
-                    // 3. Handle onResponse defensively
-                    if (typeof self.config.onResponse === 'function' && response.ok) {
+                    // 3. DEFENSIVE Response Parsing
+                    if (typeof self.config.onResponse === 'function' && response) {
                         try {
-                            // clone() can fail if the stream is already being used by Next.js
-                            const cloned = response.clone();
-                            const contentType = cloned.headers?.get?.('content-type') || '';
+                            // Check if headers object exists and has a .get method
+                            const headers = response.headers;
+                            const contentType = (headers && typeof headers.get === 'function')
+                                ? headers.get('content-type') || ''
+                                : '';
 
-                            // Only try to parse if it looks like JSON or Text
+                            // If it's a stream or something we shouldn't touch, return original
+                            if (response.bodyUsed) return response;
+
+                            const cloned = response.clone();
                             let data;
+
+                            // Only parse as JSON if explicitly marked
                             if (contentType.includes('application/json')) {
                                 data = await cloned.json();
                             } else {
@@ -922,6 +929,7 @@
 
                             const modifiedBody = await self.config.onResponse(data, {
                                 url: requestData.url,
+                                method: requestData.method,
                                 requestBody: requestData.body
                             });
 
@@ -931,20 +939,20 @@
                                     {
                                         status: response.status,
                                         statusText: response.statusText,
-                                        headers: response.headers // Keep original headers!
+                                        // CRITICAL: Pass the EXACT headers object back
+                                        headers: response.headers
                                     }
                                 );
                             }
-                        } catch (parseError) {
-                            // If parsing fails, just return the original response 
-                            // so the website doesn't break
+                        } catch (e) {
+                            // If cloning or parsing fails, return original response untainted
                             return response;
                         }
                     }
 
                     return response;
                 } catch (err) {
-                    // If anything goes wrong, try to return a standard fetch call as fallback
+                    // Last resort: if our proxy logic explodes, just do a normal fetch
                     return self.config.OriginalFetch(input, init);
                 }
             };
