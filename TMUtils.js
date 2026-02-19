@@ -364,7 +364,7 @@
             const container = document.createElement('div');
             container.style.cssText = 'display:flex; gap:8px; justify-content:center; align-items:center;';
 
-            const btnStyle = 'padding:4px 8px; font-size:13px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer;';
+            const btnStyle = 'padding:4px 8px; font-size:13px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer; color:#333;';
 
             const createBtn = (text, page) => {
                 const b = document.createElement('button');
