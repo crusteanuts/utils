@@ -853,6 +853,105 @@
         }
     }
 
+    class ProxyFetch {
+        constructor(config = {}) {
+            this.config = {
+                OriginalFetch: window.fetch.bind(window),
+                shouldIntercept: () => false,
+                onRequest: null,
+                onResponse: null,
+                onError: null,
+                ...config
+            };
+        }
+
+        async init() {
+            const self = this;
+            window.fetch = async (input, init = {}) => {
+                const url = typeof input === 'string' ? input : input.url;
+
+                // 1. Check if we should intercept
+                // We pass a minimal "xhr-like" object for compatibility with your existing logic
+                const context = { url, method: init.method || 'GET', headers: init.headers || {} };
+
+                if (!this.config.shouldIntercept(context)) {
+                    return this.config.OriginalFetch(input, init);
+                }
+
+                try {
+                    let requestData = {
+                        url: url,
+                        method: init.method || 'GET',
+                        headers: init.headers || {},
+                        body: init.body
+                    };
+
+                    // 2. onRequest Hook
+                    if (typeof this.config.onRequest === 'function') {
+                        const modified = await this.config.onRequest(requestData);
+
+                        // Handle Short Circuit
+                        if (modified?.shortCircuit) {
+                            return new Response(
+                                typeof modified.response === 'string'
+                                    ? modified.response
+                                    : JSON.stringify(modified.response),
+                                { status: 200, statusText: 'OK', headers: { 'Content-Type': 'application/json' } }
+                            );
+                        }
+                        if (modified) requestData = modified;
+                    }
+
+                    // 3. Execute real Fetch
+                    const response = await this.config.OriginalFetch(requestData.url, {
+                        ...init,
+                        method: requestData.method,
+                        headers: requestData.headers,
+                        body: requestData.body
+                    });
+
+                    // 4. onResponse Hook
+                    if (typeof this.config.onResponse === 'function') {
+                        // Clone response so we don't lock the stream
+                        const clonedResponse = response.clone();
+                        let data = await this._parseResponse(clonedResponse);
+
+                        // We pass 'requestData' as the second arg to match your XHR 'this' context
+                        const modifiedBody = await this.config.onResponse(data, {
+                            url: requestData.url,
+                            requestBody: requestData.body
+                        });
+
+                        if (modifiedBody !== undefined) {
+                            return new Response(
+                                typeof modifiedBody === 'string' ? modifiedBody : JSON.stringify(modifiedBody),
+                                {
+                                    status: response.status,
+                                    statusText: response.statusText,
+                                    headers: response.headers
+                                }
+                            );
+                        }
+                    }
+
+                    return response;
+
+                } catch (err) {
+                    if (typeof this.config.onError === 'function') {
+                        this.config.onError(err, { url });
+                    }
+                    throw err;
+                }
+            };
+        }
+
+        async _parseResponse(response) {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) return response.json();
+            return response.text();
+        }
+    }
+
     class FloatingUIManager {
         constructor(options = {}) {
             this.id = options.id || 'tm-floating-ui';
@@ -1033,6 +1132,7 @@
         createToolUI(options) {
             return new ToolUIManager(options);
         },
-        ProxyXMLHttpRequest
+        ProxyXMLHttpRequest,
+        ProxyFetch
     };
 })(window);
