@@ -246,7 +246,32 @@
         disableSearch = false,
         width = 300,
         height = 500,
-        normalize = (item) => item, // Default: return as is        
+        normalize = (item) => item,
+        renderPreview = (item, container) => {
+            const isVideo = item.type === 'video';
+            container.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 12px; color: #eee; font-family: sans-serif;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 8px;">
+                    <span style="font-weight: bold; font-size: 14px;">ID: ${item.id}</span>
+                    <span style="font-size: 11px; background: #444; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">${item.type}</span>
+                </div>
+                
+                <div style="background: #000; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 200px;">
+                    ${isVideo
+                    ? `<video src="${item.mediaUrl}" controls autoplay style="max-width: 100%; max-height: 70vh; display: block;"></video>`
+                    : `<img src="${item.mediaUrl}" style="max-width: 100%; max-height: 70vh; display: block;" />`
+                }
+                </div>
+
+                ${item.prompt ? `
+                    <div style="background: #222; padding: 10px; border-radius: 4px; border-left: 3px solid #007bff;">
+                        <div style="font-size: 11px; color: #888; margin-bottom: 4px; text-transform: uppercase;">Prompt</div>
+                        <div style="font-size: 13px; line-height: 1.4; color: #ddd;">${item.prompt}</div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        },
     }) {
         const state = { currentPage: 1, perPage: 20 };
         let panel, content, pagination, modal, modalContent;
