@@ -240,7 +240,6 @@
         title = 'Panel',
         eventName = 'tm_panel_update',
         renderItemContent = null,
-        renderPreview = null,
         filterFn = null,
         exportFileName = 'export.json',
         disableSearch = false,
