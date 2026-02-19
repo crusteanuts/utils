@@ -854,107 +854,53 @@
     }
 
     class ProxyFetch {
-        constructor(config = {}) {
-            this.config = {
-                OriginalFetch: window.fetch.bind(window),
-                shouldIntercept: () => false,
-                onRequest: null,
-                onResponse: null,
-                ...config
-            };
+        constructor(handlers = {}) {
+            this.onRequest = handlers.onRequest;   // Must return { body, shortCircuit? } or null
+            this.onResponse = handlers.onResponse; // Must return modifiedData or null
+            this.originalFetch = window.fetch.bind(window);
         }
 
         async init() {
             const self = this;
-            window.fetch = async function (input, init) {
-                // 1. Determine URL and Method safely
-                const url = typeof input === 'string' ? input : (input?.url || '');
-                const method = (init?.method || input?.method || 'GET').toUpperCase();
+            window.fetch = async function (resource, options) {
+                let fetchArgs = [resource, options || {}];
 
-                // 2. BYPASS logic: If we shouldn't touch this, get out immediately.
-                // This prevents interfering with Next.js/RSC internal logic.
-                if (!self.config.shouldIntercept({ url, method })) {
-                    return self.config.OriginalFetch(input, init);
+                // --- 1. REQUEST INTERCEPTION ---
+                if (self.onRequest) {
+                    const result = await self.onRequest(fetchArgs[0], fetchArgs[1]);
+                    if (result?.shortCircuit) return result.response;
+                    if (result?.body) fetchArgs[1].body = result.body;
                 }
+
+                // Execute original fetch with preserved context
+                const response = await self.originalFetch(...fetchArgs);
+
+                // --- 2. RESPONSE INTERCEPTION ---
+                if (!self.onResponse) return response;
 
                 try {
-                    let requestData = {
-                        url,
-                        method,
-                        headers: init?.headers || input?.headers || {},
-                        body: init?.body || input?.body || null
-                    };
+                    const requestUrl = typeof resource === 'string' ? resource : resource.url;
+                    const contentType = response.headers.get("content-type") || "";
 
-                    // Handle onRequest
-                    if (typeof self.config.onRequest === 'function') {
-                        const modified = await self.config.onRequest(requestData);
-                        if (modified?.shortCircuit) {
-                            return new Response(
-                                typeof modified.response === 'string' ? modified.response : JSON.stringify(modified.response),
-                                { status: 200, headers: { 'Content-Type': 'application/json' } }
-                            );
-                        }
-                        if (modified) requestData = modified;
-                    }
+                    // Only process if it's JSON and matches your target URLs
+                    if (contentType.includes("application/json")) {
+                        const originalData = await response.clone().json();
+                        const modifiedData = await self.onResponse(originalData, requestUrl, response);
 
-                    // Execute the real fetch
-                    const response = await self.config.OriginalFetch(requestData.url, {
-                        ...init,
-                        method: requestData.method,
-                        headers: requestData.headers,
-                        body: requestData.body
-                    });
-
-                    // 3. DEFENSIVE Response Parsing
-                    if (typeof self.config.onResponse === 'function' && response) {
-                        try {
-                            // Check if headers object exists and has a .get method
-                            const headers = response.headers;
-                            const contentType = (headers && typeof headers.get === 'function')
-                                ? headers.get('content-type') || ''
-                                : '';
-
-                            // If it's a stream or something we shouldn't touch, return original
-                            if (response.bodyUsed) return response;
-
-                            const cloned = response.clone();
-                            let data;
-
-                            // Only parse as JSON if explicitly marked
-                            if (contentType.includes('application/json')) {
-                                data = await cloned.json();
-                            } else {
-                                data = await cloned.text();
-                            }
-
-                            const modifiedBody = await self.config.onResponse(data, {
-                                url: requestData.url,
-                                method: requestData.method,
-                                requestBody: requestData.body
+                        if (modifiedData) {
+                            // The "Higgsfield Fix": Re-wrap using the EXACT original headers instance
+                            return new Response(JSON.stringify(modifiedData), {
+                                status: response.status,
+                                statusText: response.statusText,
+                                headers: response.headers
                             });
-
-                            if (modifiedBody !== undefined) {
-                                return new Response(
-                                    typeof modifiedBody === 'string' ? modifiedBody : JSON.stringify(modifiedBody),
-                                    {
-                                        status: response.status,
-                                        statusText: response.statusText,
-                                        // CRITICAL: Pass the EXACT headers object back
-                                        headers: response.headers
-                                    }
-                                );
-                            }
-                        } catch (e) {
-                            // If cloning or parsing fails, return original response untainted
-                            return response;
                         }
                     }
-
-                    return response;
-                } catch (err) {
-                    // Last resort: if our proxy logic explodes, just do a normal fetch
-                    return self.config.OriginalFetch(input, init);
+                } catch (e) {
+                    console.error("Proxy Error:", e);
                 }
+
+                return response;
             };
         }
     }
