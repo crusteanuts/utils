@@ -277,7 +277,7 @@
         ` : ''}
     </div>
     `;
-        };
+        }
     }) {
         const state = { currentPage: 1, perPage: 20 };
         let panel, content, pagination, modal, modalContent;
