@@ -867,8 +867,8 @@
 
         async init() {
             window.fetch = async (input, init = {}) => {
-                const url = typeof input === 'string' ? input : input.url;
-                const method = init.method || 'GET';
+                const url = typeof input === 'string' ? input : (input?.url || '');
+                const method = init?.method || 'GET';
 
                 if (!this.config.shouldIntercept({ url, method })) {
                     return this.config.OriginalFetch(input, init);
@@ -878,8 +878,8 @@
                     let requestData = {
                         url: url,
                         method: method,
-                        headers: init.headers || {},
-                        body: init.body
+                        headers: init?.headers || {},
+                        body: init?.body || null
                     };
 
                     // 1. onRequest + shortCircuit
@@ -890,7 +890,6 @@
                                 typeof modified.response === 'string' ? modified.response : JSON.stringify(modified.response),
                                 {
                                     status: 200,
-                                    // Explicitly provide headers to avoid .get() errors later
                                     headers: { 'Content-Type': 'application/json' }
                                 }
                             );
@@ -907,26 +906,33 @@
                     });
 
                     // 3. onResponse + Access to Body
-                    if (typeof this.config.onResponse === 'function') {
-                        // Clone response safely
-                        const clonedResponse = response.clone();
-                        let data = await this._parseResponse(clonedResponse);
+                    if (typeof this.config.onResponse === 'function' && response) {
+                        // Check if we can safely clone/read the response
+                        if (!response.bodyUsed) {
+                            try {
+                                const clonedResponse = response.clone();
+                                let data = await this._parseResponse(clonedResponse);
 
-                        const modifiedBody = await this.config.onResponse(data, {
-                            url: requestData.url,
-                            method: requestData.method,
-                            requestBody: requestData.body // Access to param body
-                        });
+                                const modifiedBody = await this.config.onResponse(data, {
+                                    url: requestData.url,
+                                    method: requestData.method,
+                                    requestBody: requestData.body
+                                });
 
-                        if (modifiedBody !== undefined) {
-                            return new Response(
-                                typeof modifiedBody === 'string' ? modifiedBody : JSON.stringify(modifiedBody),
-                                {
-                                    status: response.status,
-                                    statusText: response.statusText,
-                                    headers: response.headers // Use original response headers
+                                if (modifiedBody !== undefined) {
+                                    return new Response(
+                                        typeof modifiedBody === 'string' ? modifiedBody : JSON.stringify(modifiedBody),
+                                        {
+                                            status: response.status,
+                                            statusText: response.statusText,
+                                            headers: response.headers
+                                        }
+                                    );
                                 }
-                            );
+                            } catch (parseErr) {
+                                console.warn('ProxyFetch: Failed to parse/modify response', parseErr);
+                                // Fall through to original response
+                            }
                         }
                     }
 
@@ -935,32 +941,26 @@
                     if (typeof this.config.onError === 'function') {
                         this.config.onError(err, { url });
                     }
-                    // Don't swallow the error, let the app handle the fallback
                     throw err;
                 }
             };
         }
 
         async _parseResponse(response) {
-            // SAFETY FIX: Check if headers and get() exist
-            const getHeader = (name) => {
-                if (response.headers && typeof response.headers.get === 'function') {
-                    return response.headers.get(name);
-                }
-                return null;
-            };
-
-            const contentType = getHeader('content-type') || '';
+            // DEFENSIVE: Safely check for headers.get
+            const contentType = (response.headers && typeof response.headers.get === 'function')
+                ? response.headers.get('content-type')
+                : '';
 
             try {
-                if (contentType.includes('application/json')) {
+                if (contentType && contentType.includes('application/json')) {
                     return await response.json();
                 }
-                return await response.text();
             } catch (e) {
-                // If parsing fails (common with RSC streams), fallback to text
-                return await response.text();
+                // If JSON fails, it might be a partial stream or RSC payload
             }
+
+            return await response.text();
         }
     }
 
