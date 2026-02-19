@@ -854,65 +854,66 @@
     }
 
     class ProxyFetch {
-        constructor(handlers = {}) {
-            this.onRequest = handlers.onRequest;   // Should be async
-            this.onResponse = handlers.onResponse; // Should be async
-            this.originalFetch = window.fetch;     // Don't bind yet
+        constructor(config = {}) {
+            this.originalFetch = window.fetch;
+            this.shouldIntercept = config.shouldIntercept || (() => false);
+            this.onRequest = config.onRequest;
+            this.onResponse = config.onResponse;
         }
 
         init() {
             const self = this;
-            // MUST NOT be an async function at the top level to ensure 
-            // the return value is a Promise compatible with Next.js internals
-            window.fetch = function (...args) {
+            window.fetch = function () {
+                const args = arguments;
+                const resource = args[0];
+                const url = typeof resource === 'string' ? resource : resource?.url || "";
+
                 return (async () => {
-                    // 1. PRE-REQUEST LOGIC
-                    if (self.onRequest) {
+                    // 1. Determine if we touch this request at all
+                    const needsInterception = self.shouldIntercept(url, args[1]);
+
+                    // 2. REQUEST INTERCEPTION
+                    if (needsInterception && self.onRequest) {
                         try {
-                            const result = await self.onRequest(args);
-                            if (result?.shortCircuit) return result.response;
+                            await self.onRequest(args, url);
                         } catch (e) {
-                            // If user cancels (AbortError), propagate it
                             if (e.name === 'AbortError') throw e;
                             console.error("Request Interceptor Error:", e);
                         }
                     }
 
-                    // 2. EXECUTE FETCH
-                    // Use apply to preserve context exactly like your original script
-                    const response = await self.originalFetch.apply(this, args);
+                    // 3. EXECUTE FETCH
+                    // We use .apply(window, args) to ensure the internal RSC symbols 
+                    // and headers are preserved exactly as Next.js intended.
+                    const response = await self.originalFetch.apply(window, args);
 
-                    // 3. POST-RESPONSE LOGIC
-                    const url = typeof args[0] === 'string' ? args[0] : args[0].url;
-                    if (self.onResponse && self.shouldIntercept(url)) {
-                        try {
-                            const contentType = response.headers.get("content-type") || "";
-                            if (contentType.includes("application/json")) {
-                                const originalData = await response.clone().json();
-                                const modifiedData = await self.onResponse(originalData, url, response);
+                    // 4. RESPONSE INTERCEPTION
+                    // Early exit for non-target URLs (like /pricing) to prevent "get" errors
+                    if (!needsInterception || !self.onResponse) {
+                        return response;
+                    }
 
-                                if (modifiedData) {
-                                    return new Response(JSON.stringify(modifiedData), {
-                                        status: response.status,
-                                        statusText: response.statusText,
-                                        headers: response.headers // Native headers instance
-                                    });
-                                }
+                    try {
+                        const contentType = response.headers.get("content-type") || "";
+                        if (contentType.includes("application/json")) {
+                            const originalData = await response.clone().json();
+                            const modifiedData = await self.onResponse(originalData, url, response);
+
+                            if (modifiedData) {
+                                return new Response(JSON.stringify(modifiedData), {
+                                    status: response.status,
+                                    statusText: response.statusText,
+                                    headers: response.headers
+                                });
                             }
-                        } catch (e) {
-                            console.error("Response Interceptor Error:", e);
-                            return response;
                         }
+                    } catch (e) {
+                        return response;
                     }
 
                     return response;
-                })(); // Execute the async IIFE and return the resulting Promise
+                })();
             };
-        }
-
-        shouldIntercept(url) {
-            const targets = ['/user', '/project', '/custom-references', '/jobs'];
-            return targets.some(t => url.includes(t));
         }
     }
 
