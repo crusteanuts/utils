@@ -384,6 +384,7 @@
             pagination.appendChild(container);
             const info = document.createElement('div');
             info.style.marginTop = '6px';
+            info.style.color = '#666';
             info.textContent = `Page ${state.currentPage} of ${totalPages}`;
             pagination.appendChild(info);
         };
