@@ -860,107 +860,94 @@
                 shouldIntercept: () => false,
                 onRequest: null,
                 onResponse: null,
-                onError: null,
                 ...config
             };
         }
 
         async init() {
-            window.fetch = async (input, init = {}) => {
+            const self = this;
+            window.fetch = async function (input, init) {
+                // 1. Extract URL and Method safely
                 const url = typeof input === 'string' ? input : (input?.url || '');
-                const method = init?.method || 'GET';
+                const method = (init?.method || input?.method || 'GET').toUpperCase();
 
-                if (!this.config.shouldIntercept({ url, method })) {
-                    return this.config.OriginalFetch(input, init);
+                // 2. ONLY intercept if shouldIntercept returns true
+                // If it's a page navigation or RSC call, let it pass through!
+                if (!self.config.shouldIntercept({ url, method })) {
+                    return self.config.OriginalFetch(input, init);
                 }
 
                 try {
                     let requestData = {
-                        url: url,
-                        method: method,
-                        headers: init?.headers || {},
-                        body: init?.body || null
+                        url,
+                        method,
+                        headers: init?.headers || input?.headers || {},
+                        body: init?.body || input?.body || null
                     };
 
-                    // 1. onRequest + shortCircuit
-                    if (typeof this.config.onRequest === 'function') {
-                        const modified = await this.config.onRequest(requestData);
+                    // Handle onRequest
+                    if (typeof self.config.onRequest === 'function') {
+                        const modified = await self.config.onRequest(requestData);
                         if (modified?.shortCircuit) {
                             return new Response(
                                 typeof modified.response === 'string' ? modified.response : JSON.stringify(modified.response),
-                                {
-                                    status: 200,
-                                    headers: { 'Content-Type': 'application/json' }
-                                }
+                                { status: 200, headers: { 'Content-Type': 'application/json' } }
                             );
                         }
                         if (modified) requestData = modified;
                     }
 
-                    // 2. Execute Fetch
-                    const response = await this.config.OriginalFetch(requestData.url, {
+                    // Execute the real fetch
+                    const response = await self.config.OriginalFetch(requestData.url, {
                         ...init,
                         method: requestData.method,
                         headers: requestData.headers,
                         body: requestData.body
                     });
 
-                    // 3. onResponse + Access to Body
-                    if (typeof this.config.onResponse === 'function' && response) {
-                        // Check if we can safely clone/read the response
-                        if (!response.bodyUsed) {
-                            try {
-                                const clonedResponse = response.clone();
-                                let data = await this._parseResponse(clonedResponse);
+                    // 3. Handle onResponse defensively
+                    if (typeof self.config.onResponse === 'function' && response.ok) {
+                        try {
+                            // clone() can fail if the stream is already being used by Next.js
+                            const cloned = response.clone();
+                            const contentType = cloned.headers?.get?.('content-type') || '';
 
-                                const modifiedBody = await this.config.onResponse(data, {
-                                    url: requestData.url,
-                                    method: requestData.method,
-                                    requestBody: requestData.body
-                                });
-
-                                if (modifiedBody !== undefined) {
-                                    return new Response(
-                                        typeof modifiedBody === 'string' ? modifiedBody : JSON.stringify(modifiedBody),
-                                        {
-                                            status: response.status,
-                                            statusText: response.statusText,
-                                            headers: response.headers
-                                        }
-                                    );
-                                }
-                            } catch (parseErr) {
-                                console.warn('ProxyFetch: Failed to parse/modify response', parseErr);
-                                // Fall through to original response
+                            // Only try to parse if it looks like JSON or Text
+                            let data;
+                            if (contentType.includes('application/json')) {
+                                data = await cloned.json();
+                            } else {
+                                data = await cloned.text();
                             }
+
+                            const modifiedBody = await self.config.onResponse(data, {
+                                url: requestData.url,
+                                requestBody: requestData.body
+                            });
+
+                            if (modifiedBody !== undefined) {
+                                return new Response(
+                                    typeof modifiedBody === 'string' ? modifiedBody : JSON.stringify(modifiedBody),
+                                    {
+                                        status: response.status,
+                                        statusText: response.statusText,
+                                        headers: response.headers // Keep original headers!
+                                    }
+                                );
+                            }
+                        } catch (parseError) {
+                            // If parsing fails, just return the original response 
+                            // so the website doesn't break
+                            return response;
                         }
                     }
 
                     return response;
                 } catch (err) {
-                    if (typeof this.config.onError === 'function') {
-                        this.config.onError(err, { url });
-                    }
-                    throw err;
+                    // If anything goes wrong, try to return a standard fetch call as fallback
+                    return self.config.OriginalFetch(input, init);
                 }
             };
-        }
-
-        async _parseResponse(response) {
-            // DEFENSIVE: Safely check for headers.get
-            const contentType = (response.headers && typeof response.headers.get === 'function')
-                ? response.headers.get('content-type')
-                : '';
-
-            try {
-                if (contentType && contentType.includes('application/json')) {
-                    return await response.json();
-                }
-            } catch (e) {
-                // If JSON fails, it might be a partial stream or RSC payload
-            }
-
-            return await response.text();
         }
     }
 
