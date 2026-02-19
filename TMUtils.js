@@ -855,53 +855,64 @@
 
     class ProxyFetch {
         constructor(handlers = {}) {
-            this.onRequest = handlers.onRequest;   // Must return { body, shortCircuit? } or null
-            this.onResponse = handlers.onResponse; // Must return modifiedData or null
-            this.originalFetch = window.fetch.bind(window);
+            this.onRequest = handlers.onRequest;   // Should be async
+            this.onResponse = handlers.onResponse; // Should be async
+            this.originalFetch = window.fetch;     // Don't bind yet
         }
 
-        async init() {
+        init() {
             const self = this;
-            window.fetch = async function (resource, options) {
-                let fetchArgs = [resource, options || {}];
-
-                // --- 1. REQUEST INTERCEPTION ---
-                if (self.onRequest) {
-                    const result = await self.onRequest(fetchArgs[0], fetchArgs[1]);
-                    if (result?.shortCircuit) return result.response;
-                    if (result?.body) fetchArgs[1].body = result.body;
-                }
-
-                // Execute original fetch with preserved context
-                const response = await self.originalFetch(...fetchArgs);
-
-                // --- 2. RESPONSE INTERCEPTION ---
-                if (!self.onResponse) return response;
-
-                try {
-                    const requestUrl = typeof resource === 'string' ? resource : resource.url;
-                    const contentType = response.headers.get("content-type") || "";
-
-                    // Only process if it's JSON and matches your target URLs
-                    if (contentType.includes("application/json")) {
-                        const originalData = await response.clone().json();
-                        const modifiedData = await self.onResponse(originalData, requestUrl, response);
-
-                        if (modifiedData) {
-                            // The "Higgsfield Fix": Re-wrap using the EXACT original headers instance
-                            return new Response(JSON.stringify(modifiedData), {
-                                status: response.status,
-                                statusText: response.statusText,
-                                headers: response.headers
-                            });
+            // MUST NOT be an async function at the top level to ensure 
+            // the return value is a Promise compatible with Next.js internals
+            window.fetch = function (...args) {
+                return (async () => {
+                    // 1. PRE-REQUEST LOGIC
+                    if (self.onRequest) {
+                        try {
+                            const result = await self.onRequest(args);
+                            if (result?.shortCircuit) return result.response;
+                        } catch (e) {
+                            // If user cancels (AbortError), propagate it
+                            if (e.name === 'AbortError') throw e;
+                            console.error("Request Interceptor Error:", e);
                         }
                     }
-                } catch (e) {
-                    console.error("Proxy Error:", e);
-                }
 
-                return response;
+                    // 2. EXECUTE FETCH
+                    // Use apply to preserve context exactly like your original script
+                    const response = await self.originalFetch.apply(this, args);
+
+                    // 3. POST-RESPONSE LOGIC
+                    const url = typeof args[0] === 'string' ? args[0] : args[0].url;
+                    if (self.onResponse && self.shouldIntercept(url)) {
+                        try {
+                            const contentType = response.headers.get("content-type") || "";
+                            if (contentType.includes("application/json")) {
+                                const originalData = await response.clone().json();
+                                const modifiedData = await self.onResponse(originalData, url, response);
+
+                                if (modifiedData) {
+                                    return new Response(JSON.stringify(modifiedData), {
+                                        status: response.status,
+                                        statusText: response.statusText,
+                                        headers: response.headers // Native headers instance
+                                    });
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Response Interceptor Error:", e);
+                            return response;
+                        }
+                    }
+
+                    return response;
+                })(); // Execute the async IIFE and return the resulting Promise
             };
+        }
+
+        shouldIntercept(url) {
+            const targets = ['/user', '/project', '/custom-references', '/jobs'];
+            return targets.some(t => url.includes(t));
         }
     }
 
