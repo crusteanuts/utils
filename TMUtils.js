@@ -853,69 +853,66 @@
         }
     }
 
-    class ProxyFetch {
-        constructor(config = {}) {
-            this.originalFetch = window.fetch;
-            this.shouldIntercept = config.shouldIntercept || (() => false);
-            this.onRequest = config.onRequest;
-            this.onResponse = config.onResponse;
-        }
+    function createProxyFetch(config) {
+        const originalFetch = config.originalFetch || window.fetch;
+        const shouldIntercept = config.shouldIntercept || (() => false);
+        const onRequest = config.onRequest;
+        const onResponse = config.onResponse;
 
-        init() {
-            const self = this;
-            window.fetch = function () {
-                const args = arguments;
-                const resource = args[0];
-                const url = typeof resource === 'string' ? resource : resource?.url || "";
+        // This is the actual function that replaces root.fetch
+        return async function () {
+            let args = arguments;
+            const resource = args[0];
+            const options = args[1] || {};
+            const url = typeof resource === 'string' ? resource : resource instanceof Request ? resource.url : resource.toString()
 
-                return (async () => {
-                    // 1. Determine if we touch this request at all
-                    const needsInterception = self.shouldIntercept(url, args[1]);
+            const ctx = { url, options, requestBody: options.body };
+            const needsInterception = shouldIntercept(ctx);
 
-                    // 2. REQUEST INTERCEPTION
-                    if (needsInterception && self.onRequest) {
-                        try {
-                            await self.onRequest(args, url);
-                        } catch (e) {
-                            if (e.name === 'AbortError') throw e;
-                            console.error("Request Interceptor Error:", e);
-                        }
+            // 1. Request Interceptor
+            if (needsInterception && onRequest) {
+                try {
+                    // Pass args so the handler can modify options.body by reference
+                    args = await onRequest(args, ctx);
+                } catch (e) {
+                    if (e.name === 'AbortError') throw e;
+                    console.error("Request Error:", e);
+                }
+            }
+
+            // 2. The Actual Fetch
+            // Use .apply(this, args) to preserve the original 'this' context (usually window)
+            const response = await originalFetch.apply(this, args);
+
+            // 3. Early Exit for Safety (Essential for RSC/Pricing pages)
+            if (!needsInterception || !onResponse) {
+                return response;
+            }
+
+            // 4. Response Interceptor
+            try {
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("application/json")) {
+                    const originalData = await response.clone().json();
+                    const modifiedData = await onResponse(originalData, ctx, response);
+
+                    if (modifiedData) {
+                        // Create new Response but REUSE the original headers object
+                        return new Response(JSON.stringify(modifiedData), {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: response.headers
+                        });
                     }
+                }
+            } catch (e) {
+                console.error("Response Error:", e);
+                return response;
+            }
 
-                    // 3. EXECUTE FETCH
-                    // We use .apply(window, args) to ensure the internal RSC symbols 
-                    // and headers are preserved exactly as Next.js intended.
-                    const response = await self.originalFetch.apply(window, args);
-
-                    // 4. RESPONSE INTERCEPTION
-                    // Early exit for non-target URLs (like /pricing) to prevent "get" errors
-                    if (!needsInterception || !self.onResponse) {
-                        return response;
-                    }
-
-                    try {
-                        const contentType = response.headers.get("content-type") || "";
-                        if (contentType.includes("application/json")) {
-                            const originalData = await response.clone().json();
-                            const modifiedData = await self.onResponse(originalData, url, response);
-
-                            if (modifiedData) {
-                                return new Response(JSON.stringify(modifiedData), {
-                                    status: response.status,
-                                    statusText: response.statusText,
-                                    headers: response.headers
-                                });
-                            }
-                        }
-                    } catch (e) {
-                        return response;
-                    }
-
-                    return response;
-                })();
-            };
-        }
-    }
+            return response;
+        };
+    };
 
     class FloatingUIManager {
         constructor(options = {}) {
@@ -1098,6 +1095,6 @@
             return new ToolUIManager(options);
         },
         ProxyXMLHttpRequest,
-        ProxyFetch
+        createProxyFetch
     };
 })(window);
