@@ -1,290 +1,290 @@
 (function (global) {
-        'use strict';
+    'use strict';
 
-        if (global.TMUtils) return; // Prevent double load
+    if (global.TMUtils) return; // Prevent double load
 
-        /*********************************************************
-         * 🔧 General Utilities
-         *********************************************************/
-        const Utils = {
+    /*********************************************************
+     * 🔧 General Utilities
+     *********************************************************/
+    const Utils = {
 
-            saveToLocal(key, value) {
-                localStorage.setItem(key, JSON.stringify(value));
-            },
+        saveToLocal(key, value) {
+            localStorage.setItem(key, JSON.stringify(value));
+        },
 
-            loadFromLocal(key, fallback = null) {
-                try {
-                    const value = localStorage.getItem(key);
-                    return value ? JSON.parse(value) : fallback;
-                } catch {
-                    return fallback;
-                }
-            },
+        loadFromLocal(key, fallback = null) {
+            try {
+                const value = localStorage.getItem(key);
+                return value ? JSON.parse(value) : fallback;
+            } catch {
+                return fallback;
+            }
+        },
 
-            showToast(message, {
-                type = 'info',
-                duration = 4000,
-                position = { bottom: '20px', right: '20px' }
-            } = {}) {
+        showToast(message, {
+            type = 'info',
+            duration = 4000,
+            position = { bottom: '20px', right: '20px' }
+        } = {}) {
 
-                const toastId = 'tm-global-toast';
+            const toastId = 'tm-global-toast';
 
-                let toast = document.getElementById(toastId);
+            let toast = document.getElementById(toastId);
 
-                if (!toast) {
-                    toast = document.createElement('div');
-                    toast.id = toastId;
-                    document.body.appendChild(toast);
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = toastId;
+                document.body.appendChild(toast);
 
-                    Object.assign(toast.style, {
-                        position: 'fixed',
-                        padding: '10px 16px',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                        fontFamily: 'sans-serif',
-                        color: '#fff',
-                        opacity: '0',
-                        transform: 'translateY(20px)',
-                        transition: 'all 0.25s ease',
-                        zIndex: '999999'
-                    });
-                }
-
-                const colors = {
-                    success: '#28a745',
-                    error: '#dc3545',
-                    warning: '#ffc107',
-                    info: '#007bff'
-                };
-
-                toast.style.background = colors[type] || colors.info;
-                toast.style.bottom = position.bottom;
-                toast.style.right = position.right;
-
-                toast.textContent = message;
-
-                requestAnimationFrame(() => {
-                    toast.style.opacity = '1';
-                    toast.style.transform = 'translateY(0)';
+                Object.assign(toast.style, {
+                    position: 'fixed',
+                    padding: '10px 16px',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontFamily: 'sans-serif',
+                    color: '#fff',
+                    opacity: '0',
+                    transform: 'translateY(20px)',
+                    transition: 'all 0.25s ease',
+                    zIndex: '999999'
                 });
+            }
 
-                clearTimeout(toast._timeout);
-                toast._timeout = setTimeout(() => {
-                    toast.style.opacity = '0';
-                    toast.style.transform = 'translateY(20px)';
-                }, duration);
-            },
+            const colors = {
+                success: '#28a745',
+                error: '#dc3545',
+                warning: '#ffc107',
+                info: '#007bff'
+            };
 
-            isObject(item) {
-                return (item && typeof item === 'object' && !Array.isArray(item));
-            },
+            toast.style.background = colors[type] || colors.info;
+            toast.style.bottom = position.bottom;
+            toast.style.right = position.right;
 
-            deepMerge(target, source) {
-                // Force target and source to be objects. 
-                // If either is a string, the merge will fail or produce the index-error you saw.
-                if (typeof target === 'string') {
-                    try { target = JSON.parse(target); } catch { target = {}; }
-                }
-                if (typeof source === 'string') {
-                    try { source = JSON.parse(source); } catch { source = {}; }
-                }
+            toast.textContent = message;
 
-                let output = Object.assign({}, target);
+            requestAnimationFrame(() => {
+                toast.style.opacity = '1';
+                toast.style.transform = 'translateY(0)';
+            });
 
-                if (this.isObject(target) && this.isObject(source)) {
-                    Object.keys(source).forEach(key => {
-                        if (this.isObject(source[key])) {
-                            if (!(key in target) || !this.isObject(target[key])) {
-                                output[key] = JSON.parse(JSON.stringify(source[key]));
-                            } else {
-                                output[key] = this.deepMerge(target[key], source[key]);
-                            }
+            clearTimeout(toast._timeout);
+            toast._timeout = setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(20px)';
+            }, duration);
+        },
+
+        isObject(item) {
+            return (item && typeof item === 'object' && !Array.isArray(item));
+        },
+
+        deepMerge(target, source) {
+            // Force target and source to be objects. 
+            // If either is a string, the merge will fail or produce the index-error you saw.
+            if (typeof target === 'string') {
+                try { target = JSON.parse(target); } catch { target = {}; }
+            }
+            if (typeof source === 'string') {
+                try { source = JSON.parse(source); } catch { source = {}; }
+            }
+
+            let output = Object.assign({}, target);
+
+            if (this.isObject(target) && this.isObject(source)) {
+                Object.keys(source).forEach(key => {
+                    if (this.isObject(source[key])) {
+                        if (!(key in target) || !this.isObject(target[key])) {
+                            output[key] = JSON.parse(JSON.stringify(source[key]));
                         } else {
-                            output[key] = source[key];
+                            output[key] = this.deepMerge(target[key], source[key]);
                         }
-                    });
-                }
-                return output;
-            },
-
-            obfuscatePrompt(prompt) {
-                return prompt.replace(/\b\w+\b/g, match => match.split('').join('\u200B'));
+                    } else {
+                        output[key] = source[key];
+                    }
+                });
             }
-        };
+            return output;
+        },
+
+        obfuscatePrompt(prompt) {
+            return prompt.replace(/\b\w+\b/g, match => match.split('').join('\u200B'));
+        }
+    };
 
 
-        /*********************************************************
-         * 🗄 IndexedDB Store Abstraction
-         *********************************************************/
-        class IndexedStore {
-            static dbInstances = {};
+    /*********************************************************
+     * 🗄 IndexedDB Store Abstraction
+     *********************************************************/
+    class IndexedStore {
+        static dbInstances = {};
 
-            constructor({
-                dbName = 'tm_database',
-                version = 2,
-                storeName
-            }) {
-                if (!storeName) {
-                    throw new Error('storeName is required');
-                }
-
-                this.dbName = dbName;
-                this.version = version;
-                this.storeName = storeName;
+        constructor({
+            dbName = 'tm_database',
+            version = 2,
+            storeName
+        }) {
+            if (!storeName) {
+                throw new Error('storeName is required');
             }
 
-            async _open() {
-                if (IndexedStore.dbInstances[this.dbName]) {
-                    return IndexedStore.dbInstances[this.dbName];
-                }
+            this.dbName = dbName;
+            this.version = version;
+            this.storeName = storeName;
+        }
 
-                const connect = (version) => {
-                    return new Promise((resolve, reject) => {
-                        console.log(`[IndexedStore] Opening ${this.dbName} (v${version})`);
-                        const request = indexedDB.open(this.dbName, version);
-
-                        request.onupgradeneeded = (event) => {
-                            const db = event.target.result;
-                            if (!db.objectStoreNames.contains(this.storeName)) {
-                                db.createObjectStore(this.storeName, { keyPath: 'id' });
-                                console.log(`[IndexedStore] Created store: ${this.storeName}`);
-                            }
-                        };
-
-                        request.onsuccess = (event) => {
-                            resolve(event.target.result);
-                        };
-
-                        request.onerror = (event) => {
-                            const error = event.target.error;
-
-                            // If the error is because the version is too low, 
-                            // try to open it again with the version suggested by the error
-                            if (error.name === "VersionError") {
-                                // Extract the current version from the error message if possible,
-                                // or simply increment the requested version by 1
-                                const currentActualVersion = parseInt(error.message.match(/\d+/g)?.pop()) || version;
-                                console.warn(`[IndexedStore] Version mismatch. Retrying with version ${currentActualVersion + 1}`);
-                                resolve(connect(currentActualVersion + 1));
-                            } else {
-                                reject(error);
-                            }
-                        };
-
-                        // Handle blocked connection (e.g. other tabs have the DB open with old version)
-                        request.onblocked = () => {
-                            console.error("[IndexedStore] Database blocked. Please close other tabs of this site.");
-                        };
-                    });
-                };
-
-                IndexedStore.dbInstances[this.dbName] = connect(this.version);
+        async _open() {
+            if (IndexedStore.dbInstances[this.dbName]) {
                 return IndexedStore.dbInstances[this.dbName];
             }
 
-            async get(id) {
-                const db = await this._open();
-
+            const connect = (version) => {
                 return new Promise((resolve, reject) => {
-                    const tx = db.transaction(this.storeName, 'readonly');
-                    const store = tx.objectStore(this.storeName);
-                    const request = store.get(id);
+                    console.log(`[IndexedStore] Opening ${this.dbName} (v${version})`);
+                    const request = indexedDB.open(this.dbName, version);
 
-                    request.onsuccess = e => resolve(e.target.result);
-                    request.onerror = e => reject(e.target.error);
-                });
-            }
-
-            async getAll(filterFn, sortField = 'created_at', desc = true) {
-                const db = await this._open();
-
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(this.storeName, 'readonly');
-                    const store = tx.objectStore(this.storeName);
-                    const req = store.getAll();
-                    req.onsuccess = (e) => {
-                        let result = e.target.result || [];
-                        if (typeof filterFn === 'function') result = result.filter(filterFn);
-
-                        result.sort((a, b) => {
-                            a[sortField] = a.createdAtTimestamp || a.created_at || a.createdAt || a[sortField];
-                            b[sortField] = b.createdAtTimestamp || b.created_at || b.createdAt || b[sortField];
-
-                            if (!a?.[sortField] || !b?.[sortField]) return 0;
-                            const aDate = new Date(a[sortField]);
-                            const bDate = new Date(b[sortField]);
-                            return desc ? bDate - aDate : aDate - bDate;
-                        });
-
-                        resolve(result);
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains(this.storeName)) {
+                            db.createObjectStore(this.storeName, { keyPath: 'id' });
+                            console.log(`[IndexedStore] Created store: ${this.storeName}`);
+                        }
                     };
-                    req.onerror = (e) => reject(e.target.error);
+
+                    request.onsuccess = (event) => {
+                        resolve(event.target.result);
+                    };
+
+                    request.onerror = (event) => {
+                        const error = event.target.error;
+
+                        // If the error is because the version is too low, 
+                        // try to open it again with the version suggested by the error
+                        if (error.name === "VersionError") {
+                            // Extract the current version from the error message if possible,
+                            // or simply increment the requested version by 1
+                            const currentActualVersion = parseInt(error.message.match(/\d+/g)?.pop()) || version;
+                            console.warn(`[IndexedStore] Version mismatch. Retrying with version ${currentActualVersion + 1}`);
+                            resolve(connect(currentActualVersion + 1));
+                        } else {
+                            reject(error);
+                        }
+                    };
+
+                    // Handle blocked connection (e.g. other tabs have the DB open with old version)
+                    request.onblocked = () => {
+                        console.error("[IndexedStore] Database blocked. Please close other tabs of this site.");
+                    };
                 });
-            }
+            };
 
-            async put(record) {
-                if (!record?.id) {
-                    throw new Error('Record must contain an id field');
-                }
-
-                const db = await this._open();
-
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(this.storeName, 'readwrite');
-                    const store = tx.objectStore(this.storeName);
-                    const request = store.put(record);
-
-                    request.onsuccess = () => resolve(record);
-                    request.onerror = e => reject(e.target.error);
-                });
-            }
-
-            async delete(id) {
-                const db = await this._open();
-
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(this.storeName, 'readwrite');
-                    const store = tx.objectStore(this.storeName);
-                    const request = store.delete(id);
-
-                    request.onsuccess = () => resolve(true);
-                    request.onerror = e => reject(e.target.error);
-                });
-            }
-
-            async clear() {
-                const db = await this._open();
-
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction(this.storeName, 'readwrite');
-                    const store = tx.objectStore(this.storeName);
-                    const request = store.clear();
-
-                    request.onsuccess = () => resolve(true);
-                    request.onerror = e => reject(e.target.error);
-                });
-            }
+            IndexedStore.dbInstances[this.dbName] = connect(this.version);
+            return IndexedStore.dbInstances[this.dbName];
         }
 
+        async get(id) {
+            const db = await this._open();
 
-        /*********************************************************
-         * 🧱 Generic Panel Tool Factory
-         *********************************************************/
-        function createPanelTool({
-            className = 'tmutils-panel',
-            store,
-            title = 'Panel',
-            eventName = 'tm_panel_update',
-            renderItemContent = null,
-            filterFn = null,
-            exportFileName = 'export.json',
-            disableSearch = false,
-            width = 300,
-            height = 500,
-            normalize = (item) => item,
-            renderPreview = (item, container) => {
-                const isVideo = item.type === 'video';
-                container.innerHTML = `
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readonly');
+                const store = tx.objectStore(this.storeName);
+                const request = store.get(id);
+
+                request.onsuccess = e => resolve(e.target.result);
+                request.onerror = e => reject(e.target.error);
+            });
+        }
+
+        async getAll(filterFn, sortField = 'created_at', desc = true) {
+            const db = await this._open();
+
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readonly');
+                const store = tx.objectStore(this.storeName);
+                const req = store.getAll();
+                req.onsuccess = (e) => {
+                    let result = e.target.result || [];
+                    if (typeof filterFn === 'function') result = result.filter(filterFn);
+
+                    result.sort((a, b) => {
+                        a[sortField] = a.createdAtTimestamp || a.created_at || a.createdAt || a[sortField];
+                        b[sortField] = b.createdAtTimestamp || b.created_at || b.createdAt || b[sortField];
+
+                        if (!a?.[sortField] || !b?.[sortField]) return 0;
+                        const aDate = new Date(a[sortField]);
+                        const bDate = new Date(b[sortField]);
+                        return desc ? bDate - aDate : aDate - bDate;
+                    });
+
+                    resolve(result);
+                };
+                req.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async put(record) {
+            if (!record?.id) {
+                throw new Error('Record must contain an id field');
+            }
+
+            const db = await this._open();
+
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const request = store.put(record);
+
+                request.onsuccess = () => resolve(record);
+                request.onerror = e => reject(e.target.error);
+            });
+        }
+
+        async delete(id) {
+            const db = await this._open();
+
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const request = store.delete(id);
+
+                request.onsuccess = () => resolve(true);
+                request.onerror = e => reject(e.target.error);
+            });
+        }
+
+        async clear() {
+            const db = await this._open();
+
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(this.storeName, 'readwrite');
+                const store = tx.objectStore(this.storeName);
+                const request = store.clear();
+
+                request.onsuccess = () => resolve(true);
+                request.onerror = e => reject(e.target.error);
+            });
+        }
+    }
+
+
+    /*********************************************************
+     * 🧱 Generic Panel Tool Factory
+     *********************************************************/
+    function createPanelTool({
+        className = 'tmutils-panel',
+        store,
+        title = 'Panel',
+        eventName = 'tm_panel_update',
+        renderItemContent = null,
+        filterFn = null,
+        exportFileName = 'export.json',
+        disableSearch = false,
+        width = 300,
+        height = 500,
+        normalize = (item) => item,
+        renderPreview = (item, container) => {
+            const isVideo = item.type === 'video';
+            container.innerHTML = `
     <div style="display: flex; flex-direction: column; gap: 12px; color: #eee; font-family: sans-serif;">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 8px;">
             <span style="font-weight: bold; font-size: 14px;">ID: ${item.id}</span>
@@ -293,9 +293,9 @@
         
         <div style="background: #000; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 200px;">
             ${isVideo
-                        ? `<video src="${item.mediaUrl}" controls autoplay style="max-width: 100%; max-height: 70vh; display: block;"></video>`
-                        : `<img src="${item.mediaUrl}" style="max-width: 100%; max-height: 70vh; display: block;" />`
-                    }
+                    ? `<video src="${item.mediaUrl}" controls autoplay style="max-width: 100%; max-height: 70vh; display: block;"></video>`
+                    : `<img src="${item.mediaUrl}" style="max-width: 100%; max-height: 70vh; display: block;" />`
+                }
         </div>
 
         ${item.prompt ? `
@@ -313,43 +313,43 @@
         ` : ''}
     </div>
     `;
-            }
-        }) {
-            const state = { currentPage: 1, perPage: 20 };
-            let panel, content, pagination, modal, modalContent;
+        }
+    }) {
+        const state = { currentPage: 1, perPage: 20 };
+        let panel, content, pagination, modal, modalContent;
 
-            const dispatchUpdate = () => window.dispatchEvent(new Event(eventName));
+        const dispatchUpdate = () => window.dispatchEvent(new Event(eventName));
 
-            const renderList = async () => {
-                if (!content) return;
-                const searchInput = document.getElementById(`${eventName}SearchInput`);
-                const query = searchInput?.value?.trim() || '';
+        const renderList = async () => {
+            if (!content) return;
+            const searchInput = document.getElementById(`${eventName}SearchInput`);
+            const query = searchInput?.value?.trim() || '';
 
-                const items = await store.getAll(
-                    query && filterFn ? item => filterFn(item, query) : null
-                );
+            const items = await store.getAll(
+                query && filterFn ? item => filterFn(item, query) : null
+            );
 
-                const totalPages = Math.max(1, Math.ceil(items.length / state.perPage));
-                state.currentPage = Math.min(state.currentPage, totalPages);
-                const paginated = items.slice((state.currentPage - 1) * state.perPage, state.currentPage * state.perPage);
+            const totalPages = Math.max(1, Math.ceil(items.length / state.perPage));
+            state.currentPage = Math.min(state.currentPage, totalPages);
+            const paginated = items.slice((state.currentPage - 1) * state.perPage, state.currentPage * state.perPage);
 
-                content.innerHTML = '';
+            content.innerHTML = '';
 
-                if (!paginated.length) {
-                    content.innerHTML = '<i style="padding:10px; color:#666;">No items found.</i>';
-                } else {
-                    paginated.forEach(rawItem => {
-                        // Normalize the item here
-                        const item = normalize(rawItem);
+            if (!paginated.length) {
+                content.innerHTML = '<i style="padding:10px; color:#666;">No items found.</i>';
+            } else {
+                paginated.forEach(rawItem => {
+                    // Normalize the item here
+                    const item = normalize(rawItem);
 
-                        const div = document.createElement('div');
-                        Object.assign(div.style, {
-                            marginBottom: '10px', padding: '8px', borderRadius: '4px',
-                            position: 'relative', cursor: 'pointer', borderBottom: '1px solid #eee'
-                        });
+                    const div = document.createElement('div');
+                    Object.assign(div.style, {
+                        marginBottom: '10px', padding: '8px', borderRadius: '4px',
+                        position: 'relative', cursor: 'pointer', borderBottom: '1px solid #eee'
+                    });
 
-                        // Now we can use standard keys regardless of the API source
-                        div.innerHTML = `
+                    // Now we can use standard keys regardless of the API source
+                    div.innerHTML = `
     <div style="
         font-size: 12px; 
         font-weight: bold; 
@@ -364,414 +364,446 @@
     <div style="font-size: 11px; color: #007bff; text-transform: uppercase;">${item.type}</div>
 `;
 
-                        // Render thumbnail if it exists
-                        if (item.thumbnail) {
-                            const img = document.createElement('img');
-                            img.src = item.thumbnail;
-                            img.style.cssText = 'width:80px; height:auto; margin-top:5px; border-radius:4px; display:block;';
-                            div.appendChild(img);
-                        }
+                    // Render thumbnail if it exists
+                    if (item.thumbnail) {
+                        const img = document.createElement('img');
+                        img.src = item.thumbnail;
+                        img.style.cssText = 'width:80px; height:auto; margin-top:5px; border-radius:4px; display:block;';
+                        div.appendChild(img);
+                    }
 
-                        if (renderItemContent) renderItemContent(div, item);
+                    if (renderItemContent) renderItemContent(div, item);
 
-                        const del = document.createElement('span');
-                        del.textContent = '🗑️';
-                        del.title = 'Delete';
-                        Object.assign(del.style, {
-                            position: 'absolute', top: '8px', right: '8px', cursor: 'pointer'
-                        });
-                        del.onclick = async (e) => {
-                            e.stopPropagation();
-                            if (confirm('Delete item?')) {
-                                await store.delete(item.id);
-                                dispatchUpdate();
-                                Utils.showSnackbarSuccess(`✅ Item deleted: ${item.id}`);
-                            }
-                        };
-
-                        div.appendChild(del);
-                        div.onclick = () => {
-                            if (!renderPreview) return;
-                            modalContent.innerHTML = '';
-                            renderPreview(item, modalContent);
-                            modal.style.display = 'flex';
-                        };
-                        content.appendChild(div);
+                    const del = document.createElement('span');
+                    del.textContent = '🗑️';
+                    del.title = 'Delete';
+                    Object.assign(del.style, {
+                        position: 'absolute', top: '8px', right: '8px', cursor: 'pointer'
                     });
-                }
-                renderPagination(items.length);
+                    del.onclick = async (e) => {
+                        e.stopPropagation();
+                        if (confirm('Delete item?')) {
+                            await store.delete(item.id);
+                            dispatchUpdate();
+                            Utils.showSnackbarSuccess(`✅ Item deleted: ${item.id}`);
+                        }
+                    };
+
+                    div.appendChild(del);
+                    div.onclick = () => {
+                        if (!renderPreview) return;
+                        modalContent.innerHTML = '';
+                        renderPreview(item, modalContent);
+                        modal.style.display = 'flex';
+                    };
+                    content.appendChild(div);
+                });
+            }
+            renderPagination(items.length);
+        };
+
+        const renderPagination = (total) => {
+            pagination.innerHTML = '';
+            const totalPages = Math.max(1, Math.ceil(total / state.perPage));
+
+            const container = document.createElement('div');
+            container.style.cssText = 'display:flex; gap:8px; justify-content:center; align-items:center;';
+
+            const btnStyle = 'padding:4px 8px; font-size:13px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer; color:#333;';
+
+            const createBtn = (text, page) => {
+                const b = document.createElement('button');
+                b.textContent = text;
+                b.style.cssText = btnStyle;
+                b.disabled = (page < 1 || page > totalPages || page === state.currentPage);
+                if (b.disabled) b.style.opacity = '0.4';
+                b.onclick = () => { state.currentPage = page; renderList(); };
+                return b;
             };
 
-            const renderPagination = (total) => {
-                pagination.innerHTML = '';
-                const totalPages = Math.max(1, Math.ceil(total / state.perPage));
+            container.appendChild(createBtn('⏮', 1));
+            container.appendChild(createBtn('◀', state.currentPage - 1));
+            container.appendChild(createBtn('▶', state.currentPage + 1));
+            container.appendChild(createBtn('⏭', totalPages));
 
-                const container = document.createElement('div');
-                container.style.cssText = 'display:flex; gap:8px; justify-content:center; align-items:center;';
+            pagination.appendChild(container);
+            const info = document.createElement('div');
+            info.style.marginTop = '6px';
+            info.style.color = '#666';
+            info.textContent = `Page ${state.currentPage} of ${totalPages}`;
+            pagination.appendChild(info);
+        };
 
-                const btnStyle = 'padding:4px 8px; font-size:13px; border:1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer; color:#333;';
+        return {
+            init: function () {
+                panel = document.createElement('div');
+                panel.classList.add(className, 'panel-tool-instance');
+                Object.assign(panel.style, {
+                    position: 'fixed', bottom: '50px', right: '60px', width: `${width}px`, height: `${height}px`,
+                    background: '#fff', boxShadow: '0 0 10px rgba(0,0,0,0.2)', borderRadius: '6px',
+                    display: 'none', flexDirection: 'column', zIndex: '99999', fontFamily: 'sans-serif', fontSize: '14px',
+                });
 
-                const createBtn = (text, page) => {
+                const header = document.createElement('div');
+                Object.assign(header.style, {
+                    padding: '8px', fontWeight: 'bold', background: '#f3f3f3', borderBottom: '1px solid #ddd',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    color: '#333'
+                });
+
+                const titleEl = document.createElement('span');
+                titleEl.textContent = title;
+                header.appendChild(titleEl);
+
+                const actions = document.createElement('div');
+                actions.style.display = 'flex';
+                actions.style.gap = '4px';
+
+                const makeBtn = (icon, tip, cb) => {
                     const b = document.createElement('button');
-                    b.textContent = text;
-                    b.style.cssText = btnStyle;
-                    b.disabled = (page < 1 || page > totalPages || page === state.currentPage);
-                    if (b.disabled) b.style.opacity = '0.4';
-                    b.onclick = () => { state.currentPage = page; renderList(); };
+                    b.textContent = icon; b.title = tip;
+                    b.style.cssText = 'cursor:pointer; background:#fff; border:1px solid #ccc; border-radius:4px; padding:2px 6px;';
+                    b.onclick = (e) => { e.stopPropagation(); cb(); };
                     return b;
                 };
 
-                container.appendChild(createBtn('⏮', 1));
-                container.appendChild(createBtn('◀', state.currentPage - 1));
-                container.appendChild(createBtn('▶', state.currentPage + 1));
-                container.appendChild(createBtn('⏭', totalPages));
-
-                pagination.appendChild(container);
-                const info = document.createElement('div');
-                info.style.marginTop = '6px';
-                info.style.color = '#666';
-                info.textContent = `Page ${state.currentPage} of ${totalPages}`;
-                pagination.appendChild(info);
-            };
-
-            return {
-                init: function () {
-                    panel = document.createElement('div');
-                    panel.classList.add(className, 'panel-tool-instance');
-                    Object.assign(panel.style, {
-                        position: 'fixed', bottom: '50px', right: '60px', width: `${width}px`, height: `${height}px`,
-                        background: '#fff', boxShadow: '0 0 10px rgba(0,0,0,0.2)', borderRadius: '6px',
-                        display: 'none', flexDirection: 'column', zIndex: '99999', fontFamily: 'sans-serif', fontSize: '14px',
-                    });
-
-                    const header = document.createElement('div');
-                    Object.assign(header.style, {
-                        padding: '8px', fontWeight: 'bold', background: '#f3f3f3', borderBottom: '1px solid #ddd',
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        color: '#333'
-                    });
-
-                    const titleEl = document.createElement('span');
-                    titleEl.textContent = title;
-                    header.appendChild(titleEl);
-
-                    const actions = document.createElement('div');
-                    actions.style.display = 'flex';
-                    actions.style.gap = '4px';
-
-                    const makeBtn = (icon, tip, cb) => {
-                        const b = document.createElement('button');
-                        b.textContent = icon; b.title = tip;
-                        b.style.cssText = 'cursor:pointer; background:#fff; border:1px solid #ccc; border-radius:4px; padding:2px 6px;';
-                        b.onclick = (e) => { e.stopPropagation(); cb(); };
-                        return b;
-                    };
-
-                    if (!disableSearch) {
-                        actions.appendChild(makeBtn('🔎', 'Search', () => {
-                            const i = document.getElementById(`${eventName}SearchInput`).parentElement;
-                            i.style.display = i.style.display === 'none' ? 'block' : 'none';
-                        }));
-                    }
-
-                    actions.appendChild(makeBtn('📤', 'Export', async () => {
-                        const data = await store.getAll();
-                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                        const a = document.createElement('a');
-                        a.href = URL.createObjectURL(blob);
-                        a.download = exportFileName;
-                        a.click();
+                if (!disableSearch) {
+                    actions.appendChild(makeBtn('🔎', 'Search', () => {
+                        const i = document.getElementById(`${eventName}SearchInput`).parentElement;
+                        i.style.display = i.style.display === 'none' ? 'block' : 'none';
                     }));
-
-                    actions.appendChild(makeBtn('📥', 'Import', () => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'application/json';
-                        input.onchange = async e => {
-                            const file = e.target.files[0];
-                            if (!file) return;
-                            const text = await file.text();
-                            const items = JSON.parse(text);
-                            await this.bulkImport(items);
-                        };
-                        input.click();
-                    }));
-
-                    // Added Delete All Button
-                    actions.appendChild(makeBtn('🗑', 'Delete All', async () => {
-                        if (confirm('Delete ALL items?')) {
-                            const all = await store.getAll();
-                            for (const item of all) await store.delete(item.id);
-                            dispatchUpdate();
-                            Utils.showSnackbarSuccess(`✅ All items deleted: ${all.length}`);
-                        }
-                    }));
-
-                    header.appendChild(actions);
-                    panel.appendChild(header);
-
-                    if (!disableSearch) {
-                        const div = document.createElement('div');
-                        Object.assign(div.style, {
-                            display: 'none',
-                            padding: '6px', borderBottom: '1px solid #ddd'
-                        });
-                        const searchInput = document.createElement('input');
-                        searchInput.id = `${eventName}SearchInput`;
-                        searchInput.placeholder = 'Search...';
-                        Object.assign(searchInput.style, {
-                            width: '100%', padding: '6px', boxSizing: 'border-box',
-                        });
-                        searchInput.oninput = () => { state.currentPage = 1; dispatchUpdate(); };
-                        div.appendChild(searchInput);
-                        panel.appendChild(div);
-                    }
-
-                    content = document.createElement('div');
-                    content.style.cssText = 'flex:1; overflow-y:auto; padding:10px;';
-                    panel.appendChild(content);
-
-                    pagination = document.createElement('div');
-                    pagination.style.cssText = 'padding:6px; border-top:1px solid #ddd; text-align:center;';
-                    panel.appendChild(pagination);
-
-                    document.body.appendChild(panel);
-
-                    // Modal Logic
-                    modal = document.createElement('div');
-                    Object.assign(modal.style, {
-                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'none',
-                        zIndex: '100000', padding: '40px', overflow: 'auto'
-                    });
-                    modalContent = document.createElement('div');
-                    Object.assign(modalContent.style, {
-                        margin: 'auto', background: '#111', padding: '20px', borderRadius: '8px', maxWidth: '1000px'
-                    });
-                    modal.appendChild(modalContent);
-                    modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
-                    document.body.appendChild(modal);
-
-                    window.addEventListener(eventName, renderList);
-                },
-                toggle: function () {
-                    if (!panel) return;
-                    const isHidden = panel.style.display === 'none';
-                    document.querySelectorAll(`.${className}`).forEach(p => p.style.display = 'none');
-                    panel.style.display = isHidden ? 'flex' : 'none';
-                    if (isHidden) renderList();
-
-                    return isHidden;
-                },
-
-                async updateList(newItem, dispatch = true) {
-                    if (!newItem || !newItem.id) return;
-                    try {
-                        const existing = await store.get(newItem.id);
-                        const merged = existing ? { ...existing, ...newItem } : newItem;
-                        await store.put(merged);
-                        if (dispatch) dispatchUpdate();
-                    } catch (e) {
-                        console.error('updateList error:', e);
-                    }
-                },
-
-                async bulkImport(items) {
-                    if (!Array.isArray(items)) return;
-                    for (const item of items) {
-                        if (item?.id) await store.put(item);
-                    }
-                    dispatchUpdate();
-                    if (typeof Utils !== 'undefined') Utils.showSnackbarSuccess(`✅ Items imported: ${items.length}`);
                 }
+
+                actions.appendChild(makeBtn('📤', 'Export', async () => {
+                    const data = await store.getAll();
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = exportFileName;
+                    a.click();
+                }));
+
+                actions.appendChild(makeBtn('📥', 'Import', () => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'application/json';
+                    input.onchange = async e => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const text = await file.text();
+                        const items = JSON.parse(text);
+                        await this.bulkImport(items);
+                    };
+                    input.click();
+                }));
+
+                // Added Delete All Button
+                actions.appendChild(makeBtn('🗑', 'Delete All', async () => {
+                    if (confirm('Delete ALL items?')) {
+                        const all = await store.getAll();
+                        for (const item of all) await store.delete(item.id);
+                        dispatchUpdate();
+                        Utils.showSnackbarSuccess(`✅ All items deleted: ${all.length}`);
+                    }
+                }));
+
+                header.appendChild(actions);
+                panel.appendChild(header);
+
+                if (!disableSearch) {
+                    const div = document.createElement('div');
+                    Object.assign(div.style, {
+                        display: 'none',
+                        padding: '6px', borderBottom: '1px solid #ddd'
+                    });
+                    const searchInput = document.createElement('input');
+                    searchInput.id = `${eventName}SearchInput`;
+                    searchInput.placeholder = 'Search...';
+                    Object.assign(searchInput.style, {
+                        width: '100%', padding: '6px', boxSizing: 'border-box',
+                    });
+                    searchInput.oninput = () => { state.currentPage = 1; dispatchUpdate(); };
+                    div.appendChild(searchInput);
+                    panel.appendChild(div);
+                }
+
+                content = document.createElement('div');
+                content.style.cssText = 'flex:1; overflow-y:auto; padding:10px;';
+                panel.appendChild(content);
+
+                pagination = document.createElement('div');
+                pagination.style.cssText = 'padding:6px; border-top:1px solid #ddd; text-align:center;';
+                panel.appendChild(pagination);
+
+                document.body.appendChild(panel);
+
+                // Modal Logic
+                modal = document.createElement('div');
+                Object.assign(modal.style, {
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'none',
+                    zIndex: '100000', padding: '40px', overflow: 'auto'
+                });
+                modalContent = document.createElement('div');
+                Object.assign(modalContent.style, {
+                    margin: 'auto', background: '#111', padding: '20px', borderRadius: '8px', maxWidth: '1000px'
+                });
+                modal.appendChild(modalContent);
+                modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+                document.body.appendChild(modal);
+
+                window.addEventListener(eventName, renderList);
+            },
+            toggle: function () {
+                if (!panel) return;
+                const isHidden = panel.style.display === 'none';
+                document.querySelectorAll(`.${className}`).forEach(p => p.style.display = 'none');
+                panel.style.display = isHidden ? 'flex' : 'none';
+                if (isHidden) renderList();
+
+                return isHidden;
+            },
+
+            async updateList(newItem, dispatch = true) {
+                if (!newItem || !newItem.id) return;
+                try {
+                    const existing = await store.get(newItem.id);
+                    const merged = existing ? { ...existing, ...newItem } : newItem;
+                    await store.put(merged);
+                    if (dispatch) dispatchUpdate();
+                } catch (e) {
+                    console.error('updateList error:', e);
+                }
+            },
+
+            async bulkImport(items) {
+                if (!Array.isArray(items)) return;
+                for (const item of items) {
+                    if (item?.id) await store.put(item);
+                }
+                dispatchUpdate();
+                if (typeof Utils !== 'undefined') Utils.showSnackbarSuccess(`✅ Items imported: ${items.length}`);
+            }
+        };
+    }
+
+    class ProxyXMLHttpRequest {
+        constructor(config = {}) {
+            this.config = {
+                OriginalXHR: XMLHttpRequest,
+                shouldIntercept: () => false,
+                onRequest: null,
+                onResponse: null,
+                onError: null,
+                useFetchForIntercepted: true,
+                ...config
             };
+
+            this._reset();
         }
 
-        class ProxyXMLHttpRequest {
-            constructor(config = {}) {
-                this.config = {
-                    OriginalXHR: XMLHttpRequest,
-                    shouldIntercept: () => false,
-                    onRequest: null,
-                    onResponse: null,
-                    onError: null,
-                    useFetchForIntercepted: true,
-                    ...config
-                };
+        _reset() {
+            this.onload = null;
+            this.onerror = null;
+            this.onreadystatechange = null;
+            this.onprogress = null;
 
-                this._reset();
-            }
+            this.readyState = 0;
+            this.status = 0;
+            this.statusText = '';
+            this.response = null;
+            this.responseText = '';
+            this.responseType = '';
+            this.responseURL = '';
 
-            _reset() {
-                this.onload = null;
-                this.onerror = null;
-                this.onreadystatechange = null;
-                this.onprogress = null;
+            this.method = null;
+            this.url = null;
+            this.async = true;
+            this.requestHeaders = {};
+            this.responseHeaders = {};
+            this.eventListeners = {};
+            this.controller = new AbortController();
 
-                this.readyState = 0;
-                this.status = 0;
-                this.statusText = '';
-                this.response = null;
-                this.responseText = '';
-                this.responseType = '';
-                this.responseURL = '';
+            // ADDED: Property to store the request payload
+            this.requestBody = null;
+        }
 
-                this.method = null;
-                this.url = null;
-                this.async = true;
-                this.requestHeaders = {};
-                this.responseHeaders = {};
-                this.eventListeners = {};
-                this.controller = new AbortController();
+        open(method, url, async = true, user = null, password = null) {
+            this.method = method;
+            this.url = url;
+            this.async = async;
+            this.user = user;
+            this.password = password;
 
-                // ADDED: Property to store the request payload
-                this.requestBody = null;
-            }
+            this.readyState = 1;
+            this._triggerEvent('readystatechange');
+        }
 
-            open(method, url, async = true, user = null, password = null) {
-                this.method = method;
-                this.url = url;
-                this.async = async;
-                this.user = user;
-                this.password = password;
+        setRequestHeader(header, value) {
+            this.requestHeaders[header] = value;
+        }
 
-                this.readyState = 1;
-                this._triggerEvent('readystatechange');
-            }
+        async send(body = null) {
+            this.requestBody = body;
 
-            setRequestHeader(header, value) {
-                this.requestHeaders[header] = value;
-            }
+            try {
+                const interceptionResult = this.config.shouldIntercept(this);
 
-            send(body = null) {
-                this.requestBody = body;
+                // Normalize result (handle boolean or object)
+                const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
+                const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest;
 
-                try {
-                    const shouldIntercept = this.config.shouldIntercept(this);
+                if (needsInterception) {
+                    let currentBody = body;
 
-                    if (shouldIntercept && this.config.useFetchForIntercepted) {
-                        return this._handleWithFetch(body);
-                    }
+                    // 1. Integrated UI Editor Logic
+                    if (shouldEdit) {
+                        try {
+                            // Merge current body with any payload provided in shouldIntercept
+                            const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
+                            const editedBody = await JsonRequestEditor.open(mergedBody);
 
-                    return this._fallbackToNative(body);
-                } catch (err) {
-                    this._handleError(err);
-                }
-            }
-
-            // New helper to simulate a complete XHR lifecycle without network
-            async _handleShortCircuit(mockResponse) {
-                // state: HEADERS_RECEIVED
-                this.readyState = 2;
-                this._triggerEvent('readystatechange');
-
-                // state: LOADING
-                this.readyState = 3;
-                this._triggerEvent('readystatechange');
-
-                // Apply the fake data
-                this.status = 200;
-                this.statusText = 'OK';
-                this.response = mockResponse;
-
-                // Set text response for compatibility
-                if (this.responseType === '' || this.responseType === 'text') {
-                    this.responseText = typeof mockResponse === 'string'
-                        ? mockResponse
-                        : JSON.stringify(mockResponse);
-                }
-
-                // Trigger onResponse hook even for short-circuits to stay consistent
-                if (typeof this.config.onResponse === 'function') {
-                    const modified = await this.config.onResponse(this.response, this);
-                    if (modified !== undefined) {
-                        this.response = modified;
-                        if (this.responseType === '' || this.responseType === 'text') {
-                            this.responseText = typeof modified === 'string' ? modified : JSON.stringify(modified);
-                        }
-                    }
-                }
-
-                // state: DONE
-                this.readyState = 4;
-                this._triggerEvent('readystatechange');
-
-                if (this.onload) this.onload();
-            }
-
-            _fallbackToNative(body) {
-                const xhr = new this.config.OriginalXHR();
-                const self = this;
-
-                xhr.open(this.method, this.url, this.async, this.user, this.password);
-
-                Object.entries(this.requestHeaders).forEach(([k, v]) => {
-                    xhr.setRequestHeader(k, v);
-                });
-
-                xhr.onreadystatechange = function () {
-                    self.readyState = xhr.readyState;
-                    self._triggerEvent('readystatechange');
-                };
-
-                xhr.onload = async function () { // ADDED: Made async to support await onResponse
-                    self.status = xhr.status;
-                    self.statusText = xhr.statusText;
-                    self.responseURL = xhr.responseURL;
-                    self._parseHeaders(xhr.getAllResponseHeaders());
-
-                    self.response = xhr.response;
-
-                    // ADDED: Trigger onResponse for native fallback so you always get the hook
-                    if (typeof self.config.onResponse === 'function') {
-                        const modified = await self.config.onResponse(self.response, self);
-                        if (modified !== undefined) {
-                            self.response = modified;
-
-                            if (self.responseType === '' || self.responseType === 'text') {
-                                self.responseText = typeof modified === 'string' ? modified : JSON.stringify(modified);
+                            if (editedBody !== null) {
+                                currentBody = editedBody;
+                                this.requestBody = editedBody; // Update the instance state
                             } else {
-                                self.responseText = null; // or leave undefined
+                                console.warn("XHR cancelled by user in Editor.");
+                                // Mimic an abort
+                                this.abort();
+                                return;
                             }
+                        } catch (e) {
+                            console.error("UI Editor Error (XHR):", e);
                         }
                     }
 
-                    self.readyState = 4;
-                    self._triggerEvent('readystatechange');
-                    if (self.onload) self.onload();
-                };
-
-                xhr.onerror = function () {
-                    self._handleError(new Error('Native XHR error'));
-                };
-
-                xhr.responseType = this.responseType;
-                xhr.send(body);
-            }
-
-            async _handleWithFetch(body) {
-                let requestData = {
-                    method: this.method,
-                    url: this.url,
-                    headers: { ...this.requestHeaders },
-                    body
-                };
-
-                if (typeof this.config.onRequest === 'function') {
-                    const modified = await this.config.onRequest(requestData);
-
-                    if (modified?.shortCircuit) {
-                        return this._handleShortCircuit(modified.response);
+                    // 2. Proceed with Interception (Fetch or Native)
+                    if (this.config.useFetchForIntercepted) {
+                        return this._handleWithFetch(currentBody);
                     }
-
-                    if (modified) requestData = modified;
+                    return this._fallbackToNative(currentBody);
                 }
 
-                // ADDED: Update the stored body in case onRequest modified the payload
-                this.requestBody = requestData.body;
+                // No interception needed
+                return this._fallbackToNative(body);
+            } catch (err) {
+                this._handleError(err);
+            }
+        }
 
-                this.readyState = 2;
-                this._triggerEvent('readystatechange');
+        // New helper to simulate a complete XHR lifecycle without network
+        async _handleShortCircuit(mockResponse) {
+            // state: HEADERS_RECEIVED
+            this.readyState = 2;
+            this._triggerEvent('readystatechange');
 
+            // state: LOADING
+            this.readyState = 3;
+            this._triggerEvent('readystatechange');
+
+            // Apply the fake data
+            this.status = 200;
+            this.statusText = 'OK';
+            this.response = mockResponse;
+
+            // Set text response for compatibility
+            if (this.responseType === '' || this.responseType === 'text') {
+                this.responseText = typeof mockResponse === 'string'
+                    ? mockResponse
+                    : JSON.stringify(mockResponse);
+            }
+
+            // Trigger onResponse hook even for short-circuits to stay consistent
+            if (typeof this.config.onResponse === 'function') {
+                const modified = await this.config.onResponse(this.response, this);
+                if (modified !== undefined) {
+                    this.response = modified;
+                    if (this.responseType === '' || this.responseType === 'text') {
+                        this.responseText = typeof modified === 'string' ? modified : JSON.stringify(modified);
+                    }
+                }
+            }
+
+            // state: DONE
+            this.readyState = 4;
+            this._triggerEvent('readystatechange');
+
+            if (this.onload) this.onload();
+        }
+
+        _fallbackToNative(body) {
+            const xhr = new this.config.OriginalXHR();
+            const self = this;
+
+            xhr.open(this.method, this.url, this.async, this.user, this.password);
+
+            Object.entries(this.requestHeaders).forEach(([k, v]) => {
+                xhr.setRequestHeader(k, v);
+            });
+
+            xhr.onreadystatechange = function () {
+                self.readyState = xhr.readyState;
+                self._triggerEvent('readystatechange');
+            };
+
+            xhr.onload = async function () { // ADDED: Made async to support await onResponse
+                self.status = xhr.status;
+                self.statusText = xhr.statusText;
+                self.responseURL = xhr.responseURL;
+                self._parseHeaders(xhr.getAllResponseHeaders());
+
+                self.response = xhr.response;
+
+                // ADDED: Trigger onResponse for native fallback so you always get the hook
+                if (typeof self.config.onResponse === 'function') {
+                    const modified = await self.config.onResponse(self.response, self);
+                    if (modified !== undefined) {
+                        self.response = modified;
+
+                        if (self.responseType === '' || self.responseType === 'text') {
+                            self.responseText = typeof modified === 'string' ? modified : JSON.stringify(modified);
+                        } else {
+                            self.responseText = null; // or leave undefined
+                        }
+                    }
+                }
+
+                self.readyState = 4;
+                self._triggerEvent('readystatechange');
+                if (self.onload) self.onload();
+            };
+
+            xhr.onerror = function () {
+                self._handleError(new Error('Native XHR error'));
+            };
+
+            xhr.responseType = this.responseType;
+            xhr.send(body);
+        }
+
+        async _handleWithFetch(body) {
+            let requestData = {
+                method: this.method,
+                url: this.url,
+                headers: { ...this.requestHeaders },
+                body: body // Use the (potentially edited) body
+            };
+
+            if (typeof this.config.onRequest === 'function') {
+                const modified = await this.config.onRequest(requestData, this);
+
+                if (modified?.shortCircuit) {
+                    return this._handleShortCircuit(modified.response);
+                }
+
+                if (modified) requestData = modified;
+            }
+
+            this.requestBody = requestData.body;
+
+            this.readyState = 2;
+            this._triggerEvent('readystatechange');
+
+            try {
                 const response = await fetch(requestData.url, {
                     method: requestData.method,
                     headers: requestData.headers,
@@ -790,216 +822,220 @@
                 let data = await this._parseResponse(response);
 
                 if (typeof this.config.onResponse === 'function') {
-                    // Second argument 'this' now contains the 'requestBody' property
                     const modified = await this.config.onResponse(data, this);
                     if (modified !== undefined) data = modified;
                 }
 
                 this.response = data;
-                if (this.responseType === '' || this.responseType === 'text') {
-                    this.responseText = typeof data === 'string' ? data : JSON.stringify(data);
-                } else {
-                    this.responseText = null; // or leave undefined
-                }
-
-                this.readyState = 4;
-                this._triggerEvent('readystatechange');
-
-                if (this.onload) this.onload();
-            }
-
-            _handleError(err) {
-                this.readyState = 4;
-                this.status = 0;
-
-                if (typeof this.config.onError === 'function') {
-                    this.config.onError(err, this);
-                }
-
-                if (this.onerror) this.onerror(err);
-            }
-
-            _parseResponse(response) {
-                const contentType = response.headers.get('content-type') || '';
-
-                if (contentType.includes('application/json')) {
-                    return response.json();
-                }
-                if (contentType.includes('text/') || contentType.includes('xml')) {
-                    return response.text();
-                }
-                if (this.responseType === 'blob') return response.blob();
-                if (this.responseType === 'arraybuffer') return response.arrayBuffer();
-
-                return response.text();
-            }
-
-            _parseHeaders(headers) {
-                this.responseHeaders = {};
-
-                if (headers instanceof Headers) {
-                    headers.forEach((value, key) => {
-                        this.responseHeaders[key.toLowerCase()] = value;
-                    });
-                } else if (typeof headers === 'string') {
-                    headers.split('\r\n').forEach(line => {
-                        const [key, value] = line.split(': ');
-                        if (key && value) {
-                            this.responseHeaders[key.toLowerCase()] = value;
-                        }
-                    });
-                }
-            }
-
-            abort() {
-                this.controller.abort();
-                this.readyState = 0;
-                this._triggerEvent('readystatechange');
-            }
-
-            getResponseHeader(header) {
-                return this.responseHeaders[header.toLowerCase()] || null;
-            }
-
-            getAllResponseHeaders() {
-                return Object.entries(this.responseHeaders)
-                    .map(([k, v]) => `${k}: ${v}`)
-                    .join('\r\n');
-            }
-
-            addEventListener(event, callback) {
-                if (!this.eventListeners[event]) {
-                    this.eventListeners[event] = [];
-                }
-                this.eventListeners[event].push(callback);
-            }
-
-            _triggerEvent(event) {
-                const listeners = this.eventListeners[event] || [];
-
-                listeners.forEach(cb => {
-                    try {
-                        cb({ type: event });
-                    } catch (e) { }
-                });
-
-                if (this[`on${event}`]) {
-                    this[`on${event}`]({ type: event });
-                }
+                this._finalizeResponse(data);
+            } catch (err) {
+                this._handleError(err);
             }
         }
 
-        function createProxyFetch(config) {
-            const originalFetch = config.originalFetch || window.fetch;
-            const shouldIntercept = config.shouldIntercept || (() => false);
-            const onRequest = config.onRequest;
-            const onResponse = config.onResponse;
+        _finalizeResponse(data) {
+            if (this.responseType === '' || this.responseType === 'text') {
+                this.responseText = typeof data === 'string' ? data : JSON.stringify(data);
+            } else {
+                this.responseText = null;
+            }
+            this.readyState = 4;
+            this._triggerEvent('readystatechange');
+            if (this.onload) this.onload();
+        }
 
-            // This is the actual function that replaces root.fetch
-            return async function () {
-                let args = Array.from(arguments); // Convert to array to allow modification
-                const resource = args[0];
-                const options = args[1] || {};
-                const url = typeof resource === 'string' ? resource : resource instanceof Request ? resource.url : resource.toString();
+        _handleError(err) {
+            this.readyState = 4;
+            this.status = 0;
 
-                const ctx = { url, options, requestBody: options.body };
-                const interceptionResult = shouldIntercept(ctx);
+            if (typeof this.config.onError === 'function') {
+                this.config.onError(err, this);
+            }
 
-                // Normalize: Handle boolean or object { intercept: true, editRequest: true }
-                const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
-                const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest;
+            if (this.onerror) this.onerror(err);
+        }
 
-                // 1. Request Interceptor
-                if (needsInterception) {
-                    // A. Integrated UI Editor
-                    if (shouldEdit) {
-                        try {
-                            // Extract body safely regardless of Request vs Options
-                            let currentBody = "";
-                            if (args[0] instanceof Request) {
-                                currentBody = await args[0].clone().text();
-                            } else {
-                                currentBody = args[1]?.body || "";
-                            }
+        _parseResponse(response) {
+            const contentType = response.headers.get('content-type') || '';
 
-                            const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
-                            const editedBody = await JsonRequestEditor.open(mergedBody);
+            if (contentType.includes('application/json')) {
+                return response.json();
+            }
+            if (contentType.includes('text/') || contentType.includes('xml')) {
+                return response.text();
+            }
+            if (this.responseType === 'blob') return response.blob();
+            if (this.responseType === 'arraybuffer') return response.arrayBuffer();
 
-                            // If the user didn't cancel (null), re-inject the body
-                            if (editedBody !== null) {
-                                if (args[0] instanceof Request) {
-                                    // Reconstruct Request because body is read-only
-                                    args[0] = new Request(args[0].url, {
-                                        method: args[0].method,
-                                        headers: args[0].headers,
-                                        body: editedBody,
-                                        mode: args[0].mode,
-                                        credentials: args[0].credentials
-                                    });
-                                } else {
-                                    args[1] = { ...args[1], body: editedBody };
-                                }
-                            } else {
-                                console.warn("Request cancelled by user in Editor.");
-                                // Throwing a standard DOMException mimics a real fetch abort
-                                throw new DOMException('The user aborted a request.', 'AbortError');
-                            }
-                        } catch (e) {
-                            // If it's the AbortError we just threw, re-throw it so the fetch actually stops
-                            if (e.name === 'AbortError') throw e;
+            return response.text();
+        }
 
-                            console.error("UI Editor Error:", e);
-                        }
+        _parseHeaders(headers) {
+            this.responseHeaders = {};
+
+            if (headers instanceof Headers) {
+                headers.forEach((value, key) => {
+                    this.responseHeaders[key.toLowerCase()] = value;
+                });
+            } else if (typeof headers === 'string') {
+                headers.split('\r\n').forEach(line => {
+                    const [key, value] = line.split(': ');
+                    if (key && value) {
+                        this.responseHeaders[key.toLowerCase()] = value;
                     }
+                });
+            }
+        }
 
-                    // B. Custom onRequest Handler (if provided)
-                    if (onRequest) {
-                        try {
-                            args = await onRequest(args, ctx);
-                        } catch (e) {
-                            if (e.name === 'AbortError') throw e;
-                            console.error("Request Error:", e);
-                        }
-                    }
-                }
+        abort() {
+            this.controller.abort();
+            this.readyState = 0;
+            this._triggerEvent('readystatechange');
+        }
 
-                // 2. The Actual Fetch
-                const response = await originalFetch.apply(this, args);
+        getResponseHeader(header) {
+            return this.responseHeaders[header.toLowerCase()] || null;
+        }
 
-                // 3. Early Exit for Safety
-                if (!needsInterception || !onResponse) {
-                    return response;
-                }
+        getAllResponseHeaders() {
+            return Object.entries(this.responseHeaders)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join('\r\n');
+        }
 
-                // 4. Response Interceptor
+        addEventListener(event, callback) {
+            if (!this.eventListeners[event]) {
+                this.eventListeners[event] = [];
+            }
+            this.eventListeners[event].push(callback);
+        }
+
+        _triggerEvent(event) {
+            const listeners = this.eventListeners[event] || [];
+
+            listeners.forEach(cb => {
                 try {
-                    const contentType = response.headers.get("content-type") || "";
-                    if (contentType.includes("application/json")) {
-                        const originalData = await response.clone().json();
-                        const modifiedData = await onResponse(originalData, ctx, response);
+                    cb({ type: event });
+                } catch (e) { }
+            });
 
-                        if (modifiedData) {
-                            return new Response(JSON.stringify(modifiedData), {
-                                status: response.status,
-                                statusText: response.statusText,
-                                headers: response.headers
-                            });
+            if (this[`on${event}`]) {
+                this[`on${event}`]({ type: event });
+            }
+        }
+    }
+
+    function createProxyFetch(config) {
+        const originalFetch = config.originalFetch || window.fetch;
+        const shouldIntercept = config.shouldIntercept || (() => false);
+        const onRequest = config.onRequest;
+        const onResponse = config.onResponse;
+
+        // This is the actual function that replaces root.fetch
+        return async function () {
+            let args = Array.from(arguments); // Convert to array to allow modification
+            const resource = args[0];
+            const options = args[1] || {};
+            const url = typeof resource === 'string' ? resource : resource instanceof Request ? resource.url : resource.toString();
+
+            const ctx = { url, options, requestBody: options.body };
+            const interceptionResult = shouldIntercept(ctx);
+
+            // Normalize: Handle boolean or object { intercept: true, editRequest: true }
+            const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
+            const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest;
+
+            // 1. Request Interceptor
+            if (needsInterception) {
+                // A. Integrated UI Editor
+                if (shouldEdit) {
+                    try {
+                        // Extract body safely regardless of Request vs Options
+                        let currentBody = "";
+                        if (args[0] instanceof Request) {
+                            currentBody = await args[0].clone().text();
+                        } else {
+                            currentBody = args[1]?.body || "";
                         }
+
+                        const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
+                        const editedBody = await JsonRequestEditor.open(mergedBody);
+
+                        // If the user didn't cancel (null), re-inject the body
+                        if (editedBody !== null) {
+                            if (args[0] instanceof Request) {
+                                // Reconstruct Request because body is read-only
+                                args[0] = new Request(args[0].url, {
+                                    method: args[0].method,
+                                    headers: args[0].headers,
+                                    body: editedBody,
+                                    mode: args[0].mode,
+                                    credentials: args[0].credentials
+                                });
+                            } else {
+                                args[1] = { ...args[1], body: editedBody };
+                            }
+                        } else {
+                            console.warn("Request cancelled by user in Editor.");
+                            // Throwing a standard DOMException mimics a real fetch abort
+                            throw new DOMException('The user aborted a request.', 'AbortError');
+                        }
+                    } catch (e) {
+                        // If it's the AbortError we just threw, re-throw it so the fetch actually stops
+                        if (e.name === 'AbortError') throw e;
+
+                        console.error("UI Editor Error:", e);
                     }
-                } catch (e) {
-                    console.error("Response Error:", e);
-                    return response;
                 }
 
-                return response;
-            };
-        };
+                // B. Custom onRequest Handler (if provided)
+                if (onRequest) {
+                    try {
+                        args = await onRequest(args, ctx);
+                    } catch (e) {
+                        if (e.name === 'AbortError') throw e;
+                        console.error("Request Error:", e);
+                    }
+                }
+            }
 
-        class FloatingUIManager {
-            constructor(options = {}) {
-                this.id = options.id || 'tm-floating-ui';
-                this.position = options.position || { bottom: '10px', right: '10px' };
-                this.mainIcon = options.mainIcon || `<svg version="1.1" id="_x32_" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+            // 2. The Actual Fetch
+            const response = await originalFetch.apply(this, args);
+
+            // 3. Early Exit for Safety
+            if (!needsInterception || !onResponse) {
+                return response;
+            }
+
+            // 4. Response Interceptor
+            try {
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("application/json")) {
+                    const originalData = await response.clone().json();
+                    const modifiedData = await onResponse(originalData, ctx, response);
+
+                    if (modifiedData) {
+                        return new Response(JSON.stringify(modifiedData), {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: response.headers
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error("Response Error:", e);
+                return response;
+            }
+
+            return response;
+        };
+    };
+
+    class FloatingUIManager {
+        constructor(options = {}) {
+            this.id = options.id || 'tm-floating-ui';
+            this.position = options.position || { bottom: '10px', right: '10px' };
+            this.mainIcon = options.mainIcon || `<svg version="1.1" id="_x32_" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
 	 width="20" height="20" fill="currentColor" viewBox="0 0 512 512"  xml:space="preserve">
 <g>
 	<path class="st0" d="M489.089,223.04c0,0,3.172-4.438,5.938-9.563c22.969-42.734,22.625-94.672-1.016-137.125
@@ -1021,179 +1057,179 @@
 		c-5.719,5.719-5.719,15,0,20.719C382.792,240.649,392.073,240.649,397.776,234.946z"/>
 </g>
 </svg>`;
-                this.subButtons = [];
-                this.buttons = options.buttons || [];
+            this.subButtons = [];
+            this.buttons = options.buttons || [];
 
-                this.expanded = false;
+            this.expanded = false;
 
-                this._init();
-            }
-
-            _init() {
-                this.container = document.createElement('div');
-                this.container.id = `${this.id}-container`;
-
-                Object.assign(this.container.style, {
-                    position: 'fixed',
-                    bottom: this.position.bottom,
-                    right: this.position.right,
-                    zIndex: 9999,
-                    display: 'flex',
-                    flexDirection: 'column-reverse', // Stack buttons upward
-                    alignItems: 'center',
-                    gap: '10px'
-                });
-
-                document.body.appendChild(this.container);
-                this._createMainButton();
-
-                // If buttons were passed in constructor, add them now
-                this.buttons.forEach(btn => this.addButton(btn));
-            }
-
-            _createMainButton() {
-                this.mainButton = document.createElement('div');
-                this.mainButton.innerHTML = this.mainIcon;
-
-                Object.assign(this.mainButton.style, {
-                    width: '48px', height: '48px',
-                    backgroundColor: '#1a1a1a', color: '#fff',
-                    border: '2px solid #ffffff80', borderRadius: '50%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.4)',
-                    transition: 'all 0.3s ease', userSelect: 'none', zIndex: '2'
-                });
-
-                this.mainButton.addEventListener('click', () => this.toggle());
-                this.container.appendChild(this.mainButton);
-            }
-
-            // THIS IS THE KEY MISSING PIECE
-            addButton(btnConfig) {
-                const btn = document.createElement('div');
-                btn.innerHTML = btnConfig.icon || '?';
-                btn.title = btnConfig.title || '';
-
-                Object.assign(btn.style, {
-                    width: '40px', height: '40px',
-                    backgroundColor: btnConfig.background || '#007BFF',
-                    color: '#fff', borderRadius: '50%',
-                    display: 'none', // Hidden by default until expanded
-                    alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', boxShadow: '0 3px 6px rgba(0,0,0,0.3)',
-                    transition: 'transform 0.2s ease', userSelect: 'none'
-                });
-
-                if (typeof btnConfig.onClick === 'function') {
-                    btn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        btnConfig.onClick();
-                    });
-                }
-
-                // Add to DOM and tracking array
-                this.container.appendChild(btn);
-                this.subButtons.push(btn);
-
-                return btn;
-            }
-
-            toggle() {
-                this.expanded = !this.expanded;
-                this.mainButton.style.transform = this.expanded ? 'rotate(45deg)' : 'rotate(0deg)';
-
-                this.subButtons.forEach(btn => {
-                    btn.style.display = this.expanded ? 'flex' : 'none';
-                });
-
-                // GENERIC FIX: If we are closing the FAB menu, 
-                // also hide any open panels created by createPanelTool
-                if (!this.expanded) {
-                    document.querySelectorAll('.panel-tool-instance').forEach(panel => {
-                        panel.style.display = 'none';
-                    });
-                }
-            }
-            destroy() {
-                this.container?.remove();
-            }
+            this._init();
         }
 
-        class ToolUIManager {
-            constructor(options = {}) {
-                this.id = options.id;
-                this.db = options.db || 'tm_tools_db';
-                this.toolsConfig = options.tools || [];
-                this.mainIcon = options.mainIcon;
-                this.tools = {};
+        _init() {
+            this.container = document.createElement('div');
+            this.container.id = `${this.id}-container`;
 
-                this._init();
-            }
+            Object.assign(this.container.style, {
+                position: 'fixed',
+                bottom: this.position.bottom,
+                right: this.position.right,
+                zIndex: 9999,
+                display: 'flex',
+                flexDirection: 'column-reverse', // Stack buttons upward
+                alignItems: 'center',
+                gap: '10px'
+            });
 
-            _init() {
-                // Initialize the floating menu container
-                this.floating = new FloatingUIManager({
-                    id: this.id,
-                    mainIcon: this.mainIcon
-                });
+            document.body.appendChild(this.container);
+            this._createMainButton();
 
-                // Loop through the "tools" array from your initUI() call
-                this.toolsConfig.forEach(toolConfig => {
-                    this._createTool(toolConfig);
-                });
-            }
-
-            _createTool(config) {
-                const storeInstance = new IndexedStore({ storeName: config.store, dbName: this.db });
-                const panelController = createPanelTool({ ...config, store: storeInstance });
-
-                // 1. Build the DOM elements
-                panelController.init();
-
-                const btn = this.floating.addButton({
-                    title: config.title,
-                    icon: config.icon,
-                    background: config.background,
-                    onClick: () => {
-                        const expanded = panelController.toggle() // Now this won't crash!
-                        btn.style.transform = expanded ? 'rotate(45deg)' : 'rotate(0deg)';
-                    }
-                });
-
-                this.tools[config.id] = {
-                    store: storeInstance,
-                    panel: panelController
-                }
-            }
+            // If buttons were passed in constructor, add them now
+            this.buttons.forEach(btn => this.addButton(btn));
         }
 
-        const JsonRequestEditor = (() => {
-            let modal, textarea, resolveFn;
+        _createMainButton() {
+            this.mainButton = document.createElement('div');
+            this.mainButton.innerHTML = this.mainIcon;
 
-            function init() {
-                if (modal) return;
+            Object.assign(this.mainButton.style, {
+                width: '48px', height: '48px',
+                backgroundColor: '#1a1a1a', color: '#fff',
+                border: '2px solid #ffffff80', borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.4)',
+                transition: 'all 0.3s ease', userSelect: 'none', zIndex: '2'
+            });
 
-                modal = document.createElement('div');
-                modal.style.cssText = `
+            this.mainButton.addEventListener('click', () => this.toggle());
+            this.container.appendChild(this.mainButton);
+        }
+
+        // THIS IS THE KEY MISSING PIECE
+        addButton(btnConfig) {
+            const btn = document.createElement('div');
+            btn.innerHTML = btnConfig.icon || '?';
+            btn.title = btnConfig.title || '';
+
+            Object.assign(btn.style, {
+                width: '40px', height: '40px',
+                backgroundColor: btnConfig.background || '#007BFF',
+                color: '#fff', borderRadius: '50%',
+                display: 'none', // Hidden by default until expanded
+                alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', boxShadow: '0 3px 6px rgba(0,0,0,0.3)',
+                transition: 'transform 0.2s ease', userSelect: 'none'
+            });
+
+            if (typeof btnConfig.onClick === 'function') {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    btnConfig.onClick();
+                });
+            }
+
+            // Add to DOM and tracking array
+            this.container.appendChild(btn);
+            this.subButtons.push(btn);
+
+            return btn;
+        }
+
+        toggle() {
+            this.expanded = !this.expanded;
+            this.mainButton.style.transform = this.expanded ? 'rotate(45deg)' : 'rotate(0deg)';
+
+            this.subButtons.forEach(btn => {
+                btn.style.display = this.expanded ? 'flex' : 'none';
+            });
+
+            // GENERIC FIX: If we are closing the FAB menu, 
+            // also hide any open panels created by createPanelTool
+            if (!this.expanded) {
+                document.querySelectorAll('.panel-tool-instance').forEach(panel => {
+                    panel.style.display = 'none';
+                });
+            }
+        }
+        destroy() {
+            this.container?.remove();
+        }
+    }
+
+    class ToolUIManager {
+        constructor(options = {}) {
+            this.id = options.id;
+            this.db = options.db || 'tm_tools_db';
+            this.toolsConfig = options.tools || [];
+            this.mainIcon = options.mainIcon;
+            this.tools = {};
+
+            this._init();
+        }
+
+        _init() {
+            // Initialize the floating menu container
+            this.floating = new FloatingUIManager({
+                id: this.id,
+                mainIcon: this.mainIcon
+            });
+
+            // Loop through the "tools" array from your initUI() call
+            this.toolsConfig.forEach(toolConfig => {
+                this._createTool(toolConfig);
+            });
+        }
+
+        _createTool(config) {
+            const storeInstance = new IndexedStore({ storeName: config.store, dbName: this.db });
+            const panelController = createPanelTool({ ...config, store: storeInstance });
+
+            // 1. Build the DOM elements
+            panelController.init();
+
+            const btn = this.floating.addButton({
+                title: config.title,
+                icon: config.icon,
+                background: config.background,
+                onClick: () => {
+                    const expanded = panelController.toggle() // Now this won't crash!
+                    btn.style.transform = expanded ? 'rotate(45deg)' : 'rotate(0deg)';
+                }
+            });
+
+            this.tools[config.id] = {
+                store: storeInstance,
+                panel: panelController
+            }
+        }
+    }
+
+    const JsonRequestEditor = (() => {
+        let modal, textarea, resolveFn;
+
+        function init() {
+            if (modal) return;
+
+            modal = document.createElement('div');
+            modal.style.cssText = `
             position: fixed; inset: 0; background: rgba(0,0,0,0.85);
             display: none; z-index: 999999; padding: 20px; box-sizing: border-box;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         `;
 
-                const container = document.createElement('div');
-                container.style.cssText = `
+            const container = document.createElement('div');
+            container.style.cssText = `
             background: #1e1e1e; height: 100%; display: flex; 
             flex-direction: column; border-radius: 12px; overflow: hidden;
             box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid #333;
         `;
 
-                // Header for a "Pro" feel
-                const header = document.createElement('div');
-                header.style.cssText = `padding: 15px 20px; background: #252526; color: #ccc; font-size: 14px; border-bottom: 1px solid #333; display: flex; justify-content: space-between;`;
-                header.innerHTML = `<span>JSON Request Editor</span><span style="opacity:0.5; font-size:11px;">ESC to Cancel</span>`;
+            // Header for a "Pro" feel
+            const header = document.createElement('div');
+            header.style.cssText = `padding: 15px 20px; background: #252526; color: #ccc; font-size: 14px; border-bottom: 1px solid #333; display: flex; justify-content: space-between;`;
+            header.innerHTML = `<span>JSON Request Editor</span><span style="opacity:0.5; font-size:11px;">ESC to Cancel</span>`;
 
-                textarea = document.createElement('textarea');
-                textarea.style.cssText = `
+            textarea = document.createElement('textarea');
+            textarea.style.cssText = `
             flex: 1; background: #1e1e1e; color: #d4d4d4;
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 14px; line-height: 1.5; padding: 20px;
@@ -1201,84 +1237,84 @@
             tab-size: 4;
         `;
 
-                // --- THE "FRIENDLY" LOGIC ---
+            // --- THE "FRIENDLY" LOGIC ---
 
-                // Handle Tab key (Standard textareas usually just lose focus)
-                textarea.addEventListener('keydown', (e) => {
-                    if (e.key === 'Tab') {
-                        e.preventDefault();
-                        const start = textarea.selectionStart;
-                        const end = textarea.selectionEnd;
-                        textarea.value = textarea.value.substring(0, start) + "    " + textarea.value.substring(end);
-                        textarea.selectionStart = textarea.selectionEnd = start + 4;
-                    }
-                    if (e.key === 'Escape') {
-                        cancelBtn.click();
-                    }
-                });
+            // Handle Tab key (Standard textareas usually just lose focus)
+            textarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = textarea.selectionStart;
+                    const end = textarea.selectionEnd;
+                    textarea.value = textarea.value.substring(0, start) + "    " + textarea.value.substring(end);
+                    textarea.selectionStart = textarea.selectionEnd = start + 4;
+                }
+                if (e.key === 'Escape') {
+                    cancelBtn.click();
+                }
+            });
 
-                const footer = document.createElement('div');
-                footer.style.cssText = `padding: 15px; background: #252526; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #333;`;
+            const footer = document.createElement('div');
+            footer.style.cssText = `padding: 15px; background: #252526; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #333;`;
 
-                const btnStyle = `padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; border: 1px solid #444; transition: all 0.2s;`;
+            const btnStyle = `padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; border: 1px solid #444; transition: all 0.2s;`;
 
-                const cancelBtn = document.createElement('button');
-                cancelBtn.textContent = "Cancel";
-                cancelBtn.style.cssText = btnStyle + `background: transparent; color: #ccc;`;
-                cancelBtn.onclick = () => { close(); resolveFn(null); };
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = "Cancel";
+            cancelBtn.style.cssText = btnStyle + `background: transparent; color: #ccc;`;
+            cancelBtn.onclick = () => { close(); resolveFn(null); };
 
-                const confirmBtn = document.createElement('button');
-                confirmBtn.textContent = "Send Request";
-                confirmBtn.style.cssText = btnStyle + `background: #007acc; color: white; border: none;`;
-                confirmBtn.onclick = () => {
-                    try {
-                        const parsed = JSON.parse(textarea.value);
-                        close();
-                        resolveFn(JSON.stringify(parsed));
-                    } catch (e) {
-                        // Friendly error highlighting
-                        alert("JSON Error: " + e.message);
-                    }
-                };
+            const confirmBtn = document.createElement('button');
+            confirmBtn.textContent = "Send Request";
+            confirmBtn.style.cssText = btnStyle + `background: #007acc; color: white; border: none;`;
+            confirmBtn.onclick = () => {
+                try {
+                    const parsed = JSON.parse(textarea.value);
+                    close();
+                    resolveFn(JSON.stringify(parsed));
+                } catch (e) {
+                    // Friendly error highlighting
+                    alert("JSON Error: " + e.message);
+                }
+            };
 
-                footer.append(cancelBtn, confirmBtn);
-                container.append(header, textarea, footer);
-                modal.appendChild(container);
-                document.body.appendChild(modal);
-            }
+            footer.append(cancelBtn, confirmBtn);
+            container.append(header, textarea, footer);
+            modal.appendChild(container);
+            document.body.appendChild(modal);
+        }
 
-            function open(body) {
-                init();
-                return new Promise(resolve => {
-                    resolveFn = resolve;
-                    try {
-                        const parsed = typeof body === "string" ? JSON.parse(body) : body;
-                        textarea.value = JSON.stringify(parsed, null, 4);
-                    } catch {
-                        textarea.value = body || "";
-                    }
-                    modal.style.display = "block";
-                    textarea.focus();
-                });
-            }
+        function open(body) {
+            init();
+            return new Promise(resolve => {
+                resolveFn = resolve;
+                try {
+                    const parsed = typeof body === "string" ? JSON.parse(body) : body;
+                    textarea.value = JSON.stringify(parsed, null, 4);
+                } catch {
+                    textarea.value = body || "";
+                }
+                modal.style.display = "block";
+                textarea.focus();
+            });
+        }
 
-            function close() {
-                modal.style.display = "none";
-            }
+        function close() {
+            modal.style.display = "none";
+        }
 
-            return { open };
-        })();
+        return { open };
+    })();
 
 
-        /*********************************************************
-         * 🌍 Global Export
-         *********************************************************/
-        global.TMUtils = {
-            createToolUI(options) {
-                return new ToolUIManager(options);
-            },
-            ProxyXMLHttpRequest,
-            createProxyFetch,
-            JsonRequestEditor
-        };
-    })(window);
+    /*********************************************************
+     * 🌍 Global Export
+     *********************************************************/
+    global.TMUtils = {
+        createToolUI(options) {
+            return new ToolUIManager(options);
+        },
+        ProxyXMLHttpRequest,
+        createProxyFetch,
+        JsonRequestEditor
+    };
+})(window);
