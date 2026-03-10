@@ -134,10 +134,6 @@
         }
 
         async _open() {
-            if (IndexedStore.dbInstances[this.dbName]) {
-                return IndexedStore.dbInstances[this.dbName];
-            }
-
             const connect = (version) => {
                 return new Promise((resolve, reject) => {
                     console.log(`[IndexedStore] Opening ${this.dbName} (v${version})`);
@@ -158,7 +154,7 @@
                     request.onerror = (event) => {
                         const error = event.target.error;
 
-                        // If the error is because the version is too low, 
+                        // If the error is because the version is too low,
                         // try to open it again with the version suggested by the error
                         if (error.name === "VersionError") {
                             // Extract the current version from the error message if possible,
@@ -178,8 +174,24 @@
                 });
             };
 
-            IndexedStore.dbInstances[this.dbName] = connect(this.version);
-            return IndexedStore.dbInstances[this.dbName];
+            // Reuse an existing connection if possible, but ensure this store exists.
+            let dbPromise = IndexedStore.dbInstances[this.dbName];
+            if (!dbPromise) {
+                dbPromise = connect(this.version);
+                IndexedStore.dbInstances[this.dbName] = dbPromise;
+            }
+
+            let db = await dbPromise;
+            if (db.objectStoreNames.contains(this.storeName)) {
+                return db;
+            }
+
+            // Store missing: bump version to create it.
+            const nextVersion = Math.max(db.version + 1, this.version + 1);
+            try { db.close(); } catch { }
+            const upgradedPromise = connect(nextVersion);
+            IndexedStore.dbInstances[this.dbName] = upgradedPromise;
+            return upgradedPromise;
         }
 
         async get(id) {
