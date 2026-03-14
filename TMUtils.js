@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        TMUtils
 // @author      
-// @version     1.0.0
+// @version     2.0.0
 // @description 
 // @run-at      document-start
 // @grant       GM_xmlhttpRequest
@@ -724,7 +724,6 @@
         const shouldIntercept = config.shouldIntercept || (() => false);
         const onResponse = config.onResponse;
         const onRequest = config.onRequest;
-        let isEditorOpen = false;
 
         // --- INTERNAL XHR DELEGATION BRIDGE ---
         // This allows you to "forget" about XHR entirely. 
@@ -800,17 +799,7 @@
             }
 
             if (needsInterception && shouldEdit) {
-                if (isEditorOpen) {
-                    console.warn("[Proxy] Editor already active, skipping this concurrent request.");
-                    // Option A: Just let it go through without editing
-                    // return originalFetch.apply(this, args); 
-                    // Option B: Abort it to prevent spam
-                    throw new DOMException('Request suppressed: Editor active.', 'AbortError');
-                }
-
                 try {
-                    isEditorOpen = true
-
                     let currentBody = (args[0] instanceof Request) ? await args[0].clone().text() : args[1]?.body || "";
                     const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
                     const editedBody = await JsonRequestEditor.open(mergedBody);
@@ -825,8 +814,6 @@
                         throw new DOMException('The user aborted a request.', 'AbortError');
                     }
                 } catch (e) {
-                    isEditorOpen = false; // ENSURE LOCK IS RELEASED ON ERROR
-
                     if (e.name === 'AbortError') throw e;
                     console.error("UI Editor Error:", e);
                 }
