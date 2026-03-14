@@ -4,9 +4,10 @@
 // @version     1.0.0
 // @description 
 // @run-at      document-start
-// @grant       GM.xmlHttpRequest
+// @grant       GM_xmlhttpRequest
 // @grant       unsafeWindow
 // ==/UserScript==
+
 
 (function (global) {
     'use strict';
@@ -17,33 +18,34 @@
             js: 'https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.js'
         };
 
-        const load = (url) => new Promise((res) => {
-            GM.xmlHttpRequest({
+        // Standardized helper using the more reliable GM_xmlhttpRequest
+        const load = (url) => new Promise((res, rej) => {
+            if (typeof GM_xmlhttpRequest === 'undefined') {
+                return rej("GM_xmlhttpRequest not granted!");
+            }
+            GM_xmlhttpRequest({
                 method: "GET",
                 url: url,
-                onload: (r) => res(r.responseText)
+                onload: (r) => res(r.responseText),
+                onerror: (e) => rej(e)
             });
         });
 
-        // 1. Inject CSS (Usually not blocked as strictly as JS)
-        const cssText = await load(urls.css);
-        const style = document.createElement('style');
-        style.textContent = cssText;
-        document.head.appendChild(style);
+        try {
+            const cssText = await load(urls.css);
+            const style = document.createElement('style');
+            style.textContent = cssText;
+            document.head.appendChild(style);
 
-        // 2. Inject JS via Blob URL (The CSP Bypass)
-        const jsText = await load(urls.js);
-        const blob = new Blob([jsText], { type: 'text/javascript' });
-        const blobURL = URL.createObjectURL(blob);
-
-        const script = document.createElement('script');
-        script.src = blobURL;
-
-        // Optional: Try to attach a nonce if one exists, just in case
-        const existingScript = document.querySelector('script[nonce]');
-        if (existingScript) script.setAttribute('nonce', existingScript.nonce);
-
-        document.head.appendChild(script);
+            const jsText = await load(urls.js);
+            // Using textContent bypasses the URL-based CSP block
+            const script = document.createElement('script');
+            script.textContent = jsText;
+            document.head.appendChild(script);
+            console.log("TMUtils: UI Editor Loaded via CSP Bypass");
+        } catch (e) {
+            console.error("TMUtils: Failed to load UI Editor", e);
+        }
     })()
 
     if (global.TMUtils) return; // Prevent double load
