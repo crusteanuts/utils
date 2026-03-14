@@ -1,3 +1,17 @@
+// ==UserScript==
+// @name        TMUtils
+// @author      
+// @version     1.0.0
+// @description 
+// @run-at      document-start
+// @grant       GM.xmlHttpRequest
+// @grant       unsafeWindow
+// @resource     JSON_JS  https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.js
+// @resource     JSON_CSS https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.css
+// @grant        GM_getResourceText
+// @grant        GM_addStyle
+// ==/UserScript==
+
 (function (global) {
     'use strict';
 
