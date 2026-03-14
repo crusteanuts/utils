@@ -6,21 +6,94 @@
     /*********************************************************
      * 🔧 General Utilities
      *********************************************************/
-    const Utils = {
 
-        saveToLocal(key, value) {
-            localStorage.setItem(key, JSON.stringify(value));
-        },
+    const StorageGuard = {
+        _overrides: new Map(),
+        _isInitialized: false,
 
-        loadFromLocal(key, fallback = null) {
-            try {
-                const value = localStorage.getItem(key);
-                return value ? JSON.parse(value) : fallback;
-            } catch {
-                return fallback;
+        setOverrides(config) {
+            for (const [key, callback] of Object.entries(config)) {
+                this._overrides.set(key, callback);
             }
+            this._init();
         },
 
+        _processValue(key, value, isWriting) {
+            if (!this._overrides.has(key)) return value;
+
+            const modifier = this._overrides.get(key);
+            let parsed;
+
+            try {
+                // Handle null/empty cases for the specific key
+                parsed = (value === null || value === undefined) ? {} : JSON.parse(value);
+            } catch (e) {
+                parsed = {};
+            }
+
+            const result = modifier(parsed, isWriting);
+            console.log(`%c[StorageGuard] ${isWriting ? 'Intercepted Write' : 'Forcing Read'} for: ${key}`, 'color: #ff00ff; font-weight: bold;', result);
+
+            return JSON.stringify(result);
+        },
+
+        _init() {
+            if (this._isInitialized) return;
+            const self = this;
+
+            // 1. Redefine the Prototype Methods globally
+            // This is harder for hooks to bypass because it changes the built-in behavior
+            const rawGet = Storage.prototype.getItem;
+            const rawSet = Storage.prototype.setItem;
+
+            Object.defineProperty(Storage.prototype, 'getItem', {
+                value: function (key) {
+                    const val = rawGet.apply(this, arguments);
+                    if (self._overrides.has(key)) {
+                        return self._processValue(key, val, false);
+                    }
+                    return val;
+                },
+                writable: false,
+                configurable: false
+            });
+
+            Object.defineProperty(Storage.prototype, 'setItem', {
+                value: function (key, value) {
+                    if (self._overrides.has(key)) {
+                        value = self._processValue(key, value, true);
+                    }
+                    return rawSet.apply(this, [key, value]);
+                },
+                writable: false,
+                configurable: false
+            });
+
+            // 2. The Global Pointer Redefinition
+            // We do this immediately to catch globalThis.localStorage
+            const storageProxy = new Proxy(window.localStorage, {
+                get: (t, p) => {
+                    const res = Reflect.get(t, p);
+                    if (typeof res === 'function') return res.bind(t);
+                    if (self._overrides.has(p)) return self._processValue(p, res, false);
+                    return res;
+                },
+                set: (t, p, v) => {
+                    if (self._overrides.has(p)) v = self._processValue(p, v, true);
+                    return Reflect.set(t, p, v);
+                }
+            });
+
+            try {
+                Object.defineProperty(window, 'localStorage', { get: () => storageProxy });
+                Object.defineProperty(globalThis, 'localStorage', { get: () => storageProxy });
+            } catch (e) { console.warn("Could not redefine pointer, prototype patch remains active."); }
+
+            this._isInitialized = true;
+        }
+    };
+
+    const Utils = {
         showToast(message, {
             type = 'info',
             duration = 4000,
@@ -598,354 +671,68 @@
         };
     }
 
-    class ProxyXMLHttpRequest {
-        constructor(config = {}) {
-            this.config = {
-                OriginalXHR: XMLHttpRequest,
-                shouldIntercept: () => false,
-                onRequest: null,
-                onResponse: null,
-                onError: null,
-                useFetchForIntercepted: true,
-                ...config
-            };
-
-            this._reset();
-        }
-
-        _reset() {
-            this.onload = null;
-            this.onerror = null;
-            this.onreadystatechange = null;
-            this.onprogress = null;
-
-            this.readyState = 0;
-            this.status = 0;
-            this.statusText = '';
-            this.response = null;
-            this.responseText = '';
-            this.responseType = '';
-            this.responseURL = '';
-
-            this.method = null;
-            this.url = null;
-            this.async = true;
-            this.requestHeaders = {};
-            this.responseHeaders = {};
-            this.eventListeners = {};
-            this.controller = new AbortController();
-
-            // ADDED: Property to store the request payload
-            this.requestBody = null;
-        }
-
-        open(method, url, async = true, user = null, password = null) {
-            this.method = method;
-            this.url = url;
-            this.async = async;
-            this.user = user;
-            this.password = password;
-
-            this.readyState = 1;
-            this._triggerEvent('readystatechange');
-        }
-
-        setRequestHeader(header, value) {
-            this.requestHeaders[header] = value;
-        }
-
-        async send(body = null) {
-            this.requestBody = body;
-
-            try {
-                const interceptionResult = this.config.shouldIntercept(this);
-
-                // Normalize result (handle boolean or object)
-                const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
-                const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest;
-
-                if (needsInterception) {
-                    let currentBody = body;
-
-                    // 1. Integrated UI Editor Logic
-                    if (shouldEdit) {
-                        try {
-                            // Merge current body with any payload provided in shouldIntercept
-                            const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
-                            const editedBody = await JsonRequestEditor.open(mergedBody);
-
-                            if (editedBody !== null) {
-                                currentBody = editedBody;
-                                this.requestBody = editedBody; // Update the instance state
-                            } else {
-                                console.warn("XHR cancelled by user in Editor.");
-                                // Mimic an abort
-                                this.abort();
-                                return;
-                            }
-                        } catch (e) {
-                            console.error("UI Editor Error (XHR):", e);
-                        }
-                    }
-
-                    // 2. Proceed with Interception (Fetch or Native)
-                    if (this.config.useFetchForIntercepted) {
-                        return this._handleWithFetch(currentBody);
-                    }
-                    return this._fallbackToNative(currentBody);
-                }
-
-                // No interception needed
-                return this._fallbackToNative(body);
-            } catch (err) {
-                this._handleError(err);
-            }
-        }
-
-        // New helper to simulate a complete XHR lifecycle without network
-        async _handleShortCircuit(mockResponse) {
-            // state: HEADERS_RECEIVED
-            this.readyState = 2;
-            this._triggerEvent('readystatechange');
-
-            // state: LOADING
-            this.readyState = 3;
-            this._triggerEvent('readystatechange');
-
-            // Apply the fake data
-            this.status = 200;
-            this.statusText = 'OK';
-            this.response = mockResponse;
-
-            // Set text response for compatibility
-            if (this.responseType === '' || this.responseType === 'text') {
-                this.responseText = typeof mockResponse === 'string'
-                    ? mockResponse
-                    : JSON.stringify(mockResponse);
-            }
-
-            // Trigger onResponse hook even for short-circuits to stay consistent
-            if (typeof this.config.onResponse === 'function') {
-                const modified = await this.config.onResponse(this.response, this);
-                if (modified !== undefined) {
-                    this.response = modified;
-                    if (this.responseType === '' || this.responseType === 'text') {
-                        this.responseText = typeof modified === 'string' ? modified : JSON.stringify(modified);
-                    }
-                }
-            }
-
-            // state: DONE
-            this.readyState = 4;
-            this._triggerEvent('readystatechange');
-
-            if (this.onload) this.onload();
-        }
-
-        _fallbackToNative(body) {
-            const xhr = new this.config.OriginalXHR();
-            const self = this;
-
-            xhr.open(this.method, this.url, this.async, this.user, this.password);
-
-            Object.entries(this.requestHeaders).forEach(([k, v]) => {
-                xhr.setRequestHeader(k, v);
-            });
-
-            xhr.onreadystatechange = function () {
-                self.readyState = xhr.readyState;
-                self._triggerEvent('readystatechange');
-            };
-
-            xhr.onload = async function () { // ADDED: Made async to support await onResponse
-                self.status = xhr.status;
-                self.statusText = xhr.statusText;
-                self.responseURL = xhr.responseURL;
-                self._parseHeaders(xhr.getAllResponseHeaders());
-
-                self.response = xhr.response;
-
-                // ADDED: Trigger onResponse for native fallback so you always get the hook
-                if (typeof self.config.onResponse === 'function') {
-                    const modified = await self.config.onResponse(self.response, self);
-                    if (modified !== undefined) {
-                        self.response = modified;
-
-                        if (self.responseType === '' || self.responseType === 'text') {
-                            self.responseText = typeof modified === 'string' ? modified : JSON.stringify(modified);
-                        } else {
-                            self.responseText = null; // or leave undefined
-                        }
-                    }
-                }
-
-                self.readyState = 4;
-                self._triggerEvent('readystatechange');
-                if (self.onload) self.onload();
-            };
-
-            xhr.onerror = function () {
-                self._handleError(new Error('Native XHR error'));
-            };
-
-            xhr.responseType = this.responseType;
-            xhr.send(body);
-        }
-
-        async _handleWithFetch(body) {
-            let requestData = {
-                method: this.method,
-                url: this.url,
-                headers: { ...this.requestHeaders },
-                body: body // Use the (potentially edited) body
-            };
-
-            if (typeof this.config.onRequest === 'function') {
-                const modified = await this.config.onRequest(requestData, this);
-
-                if (modified?.shortCircuit) {
-                    return this._handleShortCircuit(modified.response);
-                }
-
-                if (modified) requestData = modified;
-            }
-
-            this.requestBody = requestData.body;
-
-            this.readyState = 2;
-            this._triggerEvent('readystatechange');
-
-            try {
-                const response = await fetch(requestData.url, {
-                    method: requestData.method,
-                    headers: requestData.headers,
-                    body: (requestData.method !== 'GET' && requestData.method !== 'HEAD') ? requestData.body : undefined,
-                    signal: this.controller.signal
-                });
-
-                this.status = response.status;
-                this.statusText = response.statusText;
-                this.responseURL = response.url;
-                this._parseHeaders(response.headers);
-
-                this.readyState = 3;
-                this._triggerEvent('readystatechange');
-
-                let data = await this._parseResponse(response);
-
-                if (typeof this.config.onResponse === 'function') {
-                    const modified = await this.config.onResponse(data, this);
-                    if (modified !== undefined) data = modified;
-                }
-
-                this.response = data;
-                this._finalizeResponse(data);
-            } catch (err) {
-                this._handleError(err);
-            }
-        }
-
-        _finalizeResponse(data) {
-            if (this.responseType === '' || this.responseType === 'text') {
-                this.responseText = typeof data === 'string' ? data : JSON.stringify(data);
-            } else {
-                this.responseText = null;
-            }
-            this.readyState = 4;
-            this._triggerEvent('readystatechange');
-            if (this.onload) this.onload();
-        }
-
-        _handleError(err) {
-            this.readyState = 4;
-            this.status = 0;
-
-            if (typeof this.config.onError === 'function') {
-                this.config.onError(err, this);
-            }
-
-            if (this.onerror) this.onerror(err);
-        }
-
-        _parseResponse(response) {
-            const contentType = response.headers.get('content-type') || '';
-
-            if (contentType.includes('application/json')) {
-                return response.json();
-            }
-            if (contentType.includes('text/') || contentType.includes('xml')) {
-                return response.text();
-            }
-            if (this.responseType === 'blob') return response.blob();
-            if (this.responseType === 'arraybuffer') return response.arrayBuffer();
-
-            return response.text();
-        }
-
-        _parseHeaders(headers) {
-            this.responseHeaders = {};
-
-            if (headers instanceof Headers) {
-                headers.forEach((value, key) => {
-                    this.responseHeaders[key.toLowerCase()] = value;
-                });
-            } else if (typeof headers === 'string') {
-                headers.split('\r\n').forEach(line => {
-                    const [key, value] = line.split(': ');
-                    if (key && value) {
-                        this.responseHeaders[key.toLowerCase()] = value;
-                    }
-                });
-            }
-        }
-
-        abort() {
-            this.controller.abort();
-            this.readyState = 0;
-            this._triggerEvent('readystatechange');
-        }
-
-        getResponseHeader(header) {
-            return this.responseHeaders[header.toLowerCase()] || null;
-        }
-
-        getAllResponseHeaders() {
-            return Object.entries(this.responseHeaders)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join('\r\n');
-        }
-
-        addEventListener(event, callback) {
-            if (!this.eventListeners[event]) {
-                this.eventListeners[event] = [];
-            }
-            this.eventListeners[event].push(callback);
-        }
-
-        _triggerEvent(event) {
-            const listeners = this.eventListeners[event] || [];
-
-            listeners.forEach(cb => {
-                try {
-                    cb({ type: event });
-                } catch (e) { }
-            });
-
-            if (this[`on${event}`]) {
-                this[`on${event}`]({ type: event });
-            }
-        }
-    }
-
     function createProxyFetch(config) {
-        const originalFetch = config.originalFetch || window.fetch;
+        const root = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const originalFetch = config.originalFetch || root.fetch;
         const shouldIntercept = config.shouldIntercept || (() => false);
-        const onRequest = config.onRequest;
         const onResponse = config.onResponse;
+        const onRequest = config.onRequest;
 
-        // This is the actual function that replaces root.fetch
-        return async function () {
-            let args = Array.from(arguments); // Convert to array to allow modification
+        // --- INTERNAL XHR DELEGATION BRIDGE ---
+        // This allows you to "forget" about XHR entirely. 
+        // It turns every XHR into a Fetch call that hits the logic below.
+        const OriginalXHR = root.XMLHttpRequest;
+        root.XMLHttpRequest = function () {
+            const xhr = new OriginalXHR();
+            const self = this;
+            const _req = { method: 'GET', url: '', headers: {}, body: null };
+
+            this.open = (m, u) => { _req.method = m; _req.url = u; xhr.open(m, u); };
+            this.setRequestHeader = (k, v) => { _req.headers[k] = v; xhr.setRequestHeader(k, v); };
+
+            this.send = async function (body) {
+                _req.body = body;
+
+                // 1. Check if we actually care about this request
+                const ctx = { url: _req.url, options: _req, requestBody: body };
+                const interceptionResult = shouldIntercept(ctx);
+                const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
+
+                // 2. Optimization: If no interception is needed, use the native XHR
+                if (!needsInterception) {
+                    // We sync the headers we collected to the native XHR
+                    // Note: open() and setRequestHeader() were already called on 'xhr' in the background
+                    return xhr.send(body);
+                }
+
+                // 3. Delegation: Only pivot to Fetch if we are actually modifying something
+                try {
+                    const response = await root.fetch(_req.url, {
+                        method: _req.method,
+                        headers: _req.headers,
+                        body: _req.body
+                    });
+
+                    self.status = response.status;
+                    self.statusText = response.statusText;
+                    const text = await response.text();
+                    self.responseText = self.response = text;
+
+                    Object.defineProperty(self, 'readyState', { value: 4 });
+                    self.onreadystatechange?.();
+                    self.onload?.();
+                } catch (err) {
+                    self.onerror?.(err);
+                }
+            };
+
+            this.getAllResponseHeaders = () => xhr.getAllResponseHeaders();
+            this.getResponseHeader = (h) => xhr.getResponseHeader(h);
+        };
+
+        // --- THE CORE FETCH PROXY ---
+        root.fetch = async function () {
+            let args = Array.from(arguments);
             const resource = args[0];
             const options = args[1] || {};
             const url = typeof resource === 'string' ? resource : resource instanceof Request ? resource.url : resource.toString();
@@ -953,95 +740,103 @@
             const ctx = { url, options, requestBody: options.body };
             const interceptionResult = shouldIntercept(ctx);
 
-            // Normalize: Handle boolean or object { intercept: true, editRequest: true }
             const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
-            const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest;
+            const asStream = typeof interceptionResult === 'object' && interceptionResult.asStream;
+            const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest; // FIXED: Added this line
 
             // 1. Request Interceptor
-            if (needsInterception) {
-                // A. Integrated UI Editor
-                if (shouldEdit) {
-                    try {
-                        // Extract body safely regardless of Request vs Options
-                        let currentBody = "";
+            if (needsInterception && shouldEdit) {
+                try {
+                    let currentBody = (args[0] instanceof Request) ? await args[0].clone().text() : args[1]?.body || "";
+                    const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
+                    const editedBody = await JsonRequestEditor.open(mergedBody);
+
+                    if (editedBody !== null) {
                         if (args[0] instanceof Request) {
-                            currentBody = await args[0].clone().text();
+                            args[0] = new Request(args[0].url, { ...args[0], body: editedBody });
                         } else {
-                            currentBody = args[1]?.body || "";
+                            args[1] = { ...args[1], body: editedBody };
                         }
-
-                        const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
-                        const editedBody = await JsonRequestEditor.open(mergedBody);
-
-                        // If the user didn't cancel (null), re-inject the body
-                        if (editedBody !== null) {
-                            if (args[0] instanceof Request) {
-                                // Reconstruct Request because body is read-only
-                                args[0] = new Request(args[0].url, {
-                                    method: args[0].method,
-                                    headers: args[0].headers,
-                                    body: editedBody,
-                                    mode: args[0].mode,
-                                    credentials: args[0].credentials
-                                });
-                            } else {
-                                args[1] = { ...args[1], body: editedBody };
-                            }
-                        } else {
-                            console.warn("Request cancelled by user in Editor.");
-                            // Throwing a standard DOMException mimics a real fetch abort
-                            throw new DOMException('The user aborted a request.', 'AbortError');
-                        }
-                    } catch (e) {
-                        // If it's the AbortError we just threw, re-throw it so the fetch actually stops
-                        if (e.name === 'AbortError') throw e;
-
-                        console.error("UI Editor Error:", e);
+                    } else {
+                        throw new DOMException('The user aborted a request.', 'AbortError');
                     }
-                }
-
-                // B. Custom onRequest Handler (if provided)
-                if (onRequest) {
-                    try {
-                        args = await onRequest(args, ctx);
-                    } catch (e) {
-                        if (e.name === 'AbortError') throw e;
-                        console.error("Request Error:", e);
-                    }
+                } catch (e) {
+                    if (e.name === 'AbortError') throw e;
+                    console.error("UI Editor Error:", e);
                 }
             }
 
             // 2. The Actual Fetch
             const response = await originalFetch.apply(this, args);
+            if (!needsInterception || !onResponse) return response;
 
-            // 3. Early Exit for Safety
-            if (!needsInterception || !onResponse) {
-                return response;
-            }
+            // PREPARE HEADERS: Remove content-length to prevent hangs after modification
+            const patchedHeaders = new Headers(response.headers);
+            patchedHeaders.delete("content-length");
 
-            // 4. Response Interceptor
             try {
+                // 3. Streaming Response Logic
+                if (asStream && response.body) {
+                    const reader = response.body.getReader();
+                    const encoder = new TextEncoder();
+                    const decoder = new TextDecoder("utf-8");
+
+                    const stream = new ReadableStream({
+                        async pull(controller) {
+                            try {
+                                const { done, value } = await reader.read();
+
+                                if (done) {
+                                    const finalChunk = decoder.decode();
+                                    if (finalChunk) {
+                                        const modified = await onResponse(finalChunk, ctx, response);
+                                        controller.enqueue(encoder.encode(modified ?? finalChunk));
+                                    }
+                                    controller.close();
+                                    return;
+                                }
+
+                                const chunkText = decoder.decode(value, { stream: true });
+                                const modifiedChunk = await onResponse(chunkText, ctx, response);
+                                const output = (modifiedChunk !== undefined && modifiedChunk !== null) ? modifiedChunk : chunkText;
+
+                                controller.enqueue(encoder.encode(output));
+                            } catch (err) {
+                                controller.error(err);
+                            }
+                        },
+                        cancel(reason) { reader.cancel(reason); }
+                    });
+
+                    return new Response(stream, {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: patchedHeaders
+                    });
+                }
+
+                // 4. Standard JSON Logic
                 const contentType = response.headers.get("content-type") || "";
                 if (contentType.includes("application/json")) {
-                    const originalData = await response.clone().json();
-                    const modifiedData = await onResponse(originalData, ctx, response);
+                    const data = await response.clone().json();
+                    const modifiedData = await onResponse(data, ctx, response);
+                    const finalBody = JSON.stringify(modifiedData ?? data);
 
-                    if (modifiedData) {
-                        return new Response(JSON.stringify(modifiedData), {
-                            status: response.status,
-                            statusText: response.statusText,
-                            headers: response.headers
-                        });
-                    }
+                    return new Response(finalBody, {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: patchedHeaders
+                    });
                 }
             } catch (e) {
-                console.error("Response Error:", e);
-                return response;
+                console.error("[Proxy] Critical Interceptor Error:", e);
             }
 
             return response;
         };
-    };
+
+        return root.fetch
+    }
 
     class FloatingUIManager {
         constructor(options = {}) {
@@ -1216,107 +1011,134 @@
     }
 
     const JsonRequestEditor = (() => {
-        let modal, textarea, resolveFn;
+        let modal, editor, resolveFn;
 
         function init() {
-            if (modal) return;
+            if (modal && unsafeWindow.JSONEditor) return true;
+
+            // 1. Inject CSS bypass
+            const css = GM_getResourceText("JSON_CSS");
+            GM_addStyle(css);
+
+            // 2. Inject JS with AMD Shield
+            if (!unsafeWindow.JSONEditor) {
+                const jsText = GM_getResourceText("JSON_JS");
+                const script = document.createElement('script');
+
+                // This wrapper tricks the site's 'loader.js' into ignoring JSONEditor
+                script.textContent = `
+                (function() {
+                    const oldDefine = window.define;
+                    window.define = undefined; 
+                    ${jsText}
+                    window.define = oldDefine;
+                })();
+            `;
+                document.head.appendChild(script);
+            }
+
+            // 3. UI Construction
+            GM_addStyle(`
+            .tm-editor-modal { 
+                position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
+                display: none; z-index: 99999999; padding: 20px; box-sizing: border-box; 
+            }
+            .tm-editor-container { 
+                background: white; height: 100%; display: flex; 
+                flex-direction: column; border-radius: 8px; overflow: hidden;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            }
+            .tm-editor-footer { 
+                padding: 12px; background: #f4f4f4; border-top: 1px solid #ddd; 
+                display: flex; justify-content: flex-end; gap: 10px; 
+            }
+            .jsoneditor { border: none !important; }
+            .jsoneditor-menu { background-color: #2c3e50 !important; border-bottom: none !important; }
+.jsoneditor-format::before  { content: "F"; }
+        .jsoneditor-compact::before { content: "C"; }
+        .jsoneditor-repair::before  { content: "R"; }
+        .jsoneditor-undo::before    { content: "↶"; }
+        .jsoneditor-redo::before    { content: "↷"; }
+        `);
 
             modal = document.createElement('div');
-            modal.style.cssText = `
-            position: fixed; inset: 0; background: rgba(0,0,0,0.85);
-            display: none; z-index: 999999; padding: 20px; box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        `;
-
+            modal.className = 'tm-editor-modal';
             const container = document.createElement('div');
-            container.style.cssText = `
-            background: #1e1e1e; height: 100%; display: flex; 
-            flex-direction: column; border-radius: 12px; overflow: hidden;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid #333;
-        `;
-
-            // Header for a "Pro" feel
-            const header = document.createElement('div');
-            header.style.cssText = `padding: 15px 20px; background: #252526; color: #ccc; font-size: 14px; border-bottom: 1px solid #333; display: flex; justify-content: space-between;`;
-            header.innerHTML = `<span>JSON Request Editor</span><span style="opacity:0.5; font-size:11px;">ESC to Cancel</span>`;
-
-            textarea = document.createElement('textarea');
-            textarea.style.cssText = `
-            flex: 1; background: #1e1e1e; color: #d4d4d4;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 14px; line-height: 1.5; padding: 20px;
-            border: none; outline: none; resize: none;
-            tab-size: 4;
-        `;
-
-            // --- THE "FRIENDLY" LOGIC ---
-
-            // Handle Tab key (Standard textareas usually just lose focus)
-            textarea.addEventListener('keydown', (e) => {
-                if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    textarea.value = textarea.value.substring(0, start) + "    " + textarea.value.substring(end);
-                    textarea.selectionStart = textarea.selectionEnd = start + 4;
-                }
-                if (e.key === 'Escape') {
-                    cancelBtn.click();
-                }
-            });
-
+            container.className = 'tm-editor-container';
+            const editorDiv = document.createElement('div');
+            editorDiv.style.flex = "1";
             const footer = document.createElement('div');
-            footer.style.cssText = `padding: 15px; background: #252526; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #333;`;
-
-            const btnStyle = `padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; border: 1px solid #444; transition: all 0.2s;`;
+            footer.className = 'tm-editor-footer';
 
             const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = "Cancel";
-            cancelBtn.style.cssText = btnStyle + `background: transparent; color: #ccc;`;
-            cancelBtn.onclick = () => { close(); resolveFn(null); };
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.style.padding = '8px 15px';
+            cancelBtn.style.backgroundColor = 'rgb(0, 122, 204)';
+            cancelBtn.style.fontWeight = 'bold';
+            cancelBtn.onclick = () => { modal.style.display = 'none'; resolveFn(null); };
 
-            const confirmBtn = document.createElement('button');
-            confirmBtn.textContent = "Send Request";
-            confirmBtn.style.cssText = btnStyle + `background: #007acc; color: white; border: none;`;
-            confirmBtn.onclick = () => {
-                try {
-                    const parsed = JSON.parse(textarea.value);
-                    close();
-                    resolveFn(JSON.stringify(parsed));
-                } catch (e) {
-                    // Friendly error highlighting
-                    alert("JSON Error: " + e.message);
-                }
+            const saveBtn = document.createElement('button');
+            saveBtn.textContent = 'Apply & Send';
+            saveBtn.style.cssText = 'padding: 8px 15px; background: #007acc; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold;';
+            saveBtn.onclick = () => {
+                const json = editor.get();
+                modal.style.display = 'none';
+                resolveFn(JSON.stringify(json));
             };
 
-            footer.append(cancelBtn, confirmBtn);
-            container.append(header, textarea, footer);
+            footer.append(cancelBtn, saveBtn);
+            container.append(editorDiv, footer);
             modal.appendChild(container);
             document.body.appendChild(modal);
+
+            // Initialize using unsafeWindow
+            if (typeof unsafeWindow.JSONEditor === 'function') {
+                editor = new unsafeWindow.JSONEditor(editorDiv, {
+                    mode: 'code',
+                    mainMenuBar: true,
+                    navigationBar: false, // Cleaner look for code mode
+                    statusBar: true,
+                    // Set the theme to a dark Ace standard
+                    aceOptions: {
+                        theme: 'ace/theme/tomorrow_night'
+                    }
+                });
+                return true;
+            }
+            return false;
         }
 
-        function open(body) {
-            init();
-            return new Promise(resolve => {
-                resolveFn = resolve;
-                try {
-                    const parsed = typeof body === "string" ? JSON.parse(body) : body;
-                    textarea.value = JSON.stringify(parsed, null, 4);
-                } catch {
-                    textarea.value = body || "";
+        return {
+            open: async (body) => {
+                init();
+
+                // Give the script tag a moment to evaluate if it's the first run
+                let attempts = 0;
+                while (!unsafeWindow.JSONEditor && attempts < 10) {
+                    await new Promise(r => setTimeout(r, 50));
+                    attempts++;
                 }
-                modal.style.display = "block";
-                textarea.focus();
-            });
-        }
 
-        function close() {
-            modal.style.display = "none";
-        }
+                if (!unsafeWindow.JSONEditor) {
+                    console.error("Critical: JSONEditor still not found in unsafeWindow.");
+                    return body;
+                }
 
-        return { open };
+                return new Promise(resolve => {
+                    resolveFn = resolve;
+                    let data = {};
+                    try {
+                        data = typeof body === 'string' ? JSON.parse(body) : body;
+                    } catch (e) {
+                        data = { raw_data: body };
+                    }
+                    modal.style.display = 'block';
+                    editor.set(data);
+                    // editor.expandAll();
+                });
+            }
+        };
     })();
-
 
     /*********************************************************
      * 🌍 Global Export
@@ -1325,8 +1147,8 @@
         createToolUI(options) {
             return new ToolUIManager(options);
         },
-        ProxyXMLHttpRequest,
         createProxyFetch,
-        JsonRequestEditor
+        JsonRequestEditor,
+        StorageGuard
     };
 })(window);
