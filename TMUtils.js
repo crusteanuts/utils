@@ -6,14 +6,45 @@
 // @run-at      document-start
 // @grant       GM.xmlHttpRequest
 // @grant       unsafeWindow
-// @resource     JSON_JS  https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.js
-// @resource     JSON_CSS https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.css
-// @grant        GM_getResourceText
-// @grant        GM_addStyle
 // ==/UserScript==
 
 (function (global) {
     'use strict';
+
+    (async function () {
+        const urls = {
+            css: 'https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.css',
+            js: 'https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.js'
+        };
+
+        const load = (url) => new Promise((res) => {
+            GM.xmlHttpRequest({
+                method: "GET",
+                url: url,
+                onload: (r) => res(r.responseText)
+            });
+        });
+
+        // 1. Inject CSS (Usually not blocked as strictly as JS)
+        const cssText = await load(urls.css);
+        const style = document.createElement('style');
+        style.textContent = cssText;
+        document.head.appendChild(style);
+
+        // 2. Inject JS via Blob URL (The CSP Bypass)
+        const jsText = await load(urls.js);
+        const blob = new Blob([jsText], { type: 'text/javascript' });
+        const blobURL = URL.createObjectURL(blob);
+
+        const script = document.createElement('script');
+        script.src = blobURL;
+
+        // Optional: Try to attach a nonce if one exists, just in case
+        const existingScript = document.querySelector('script[nonce]');
+        if (existingScript) script.setAttribute('nonce', existingScript.nonce);
+
+        document.head.appendChild(script);
+    })()
 
     if (global.TMUtils) return; // Prevent double load
 
