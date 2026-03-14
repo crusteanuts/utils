@@ -1059,117 +1059,124 @@
 
     const JsonRequestEditor = (() => {
         let modal, editor, resolveFn;
+        const JS_URL = "https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.js";
+        const CSS_URL = "https://cdn.jsdelivr.net/npm/jsoneditor@10.4.2/dist/jsoneditor.min.css";
 
-        function init() {
+        // Helper to fetch text using the privileged GM_xmlhttpRequest
+        async function getResource(url) {
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: url,
+                    onload: (res) => resolve(res.responseText),
+                    onerror: (err) => reject(err)
+                });
+            });
+        }
+
+        async function init() {
             if (modal && unsafeWindow.JSONEditor) return true;
 
-            // 1. Inject CSS bypass
-            const css = GM_getResourceText("JSON_CSS");
-            GM_addStyle(css);
+            try {
+                // 1. Fetch and Inject CSS
+                const cssText = await getResource(CSS_URL);
+                GM_addStyle(cssText);
 
-            // 2. Inject JS with AMD Shield
-            if (!unsafeWindow.JSONEditor) {
-                const jsText = GM_getResourceText("JSON_JS");
-                const script = document.createElement('script');
+                // 2. Fetch and Inject JS (with AMD Shield)
+                if (!unsafeWindow.JSONEditor) {
+                    const jsText = await getResource(JS_URL);
+                    const script = document.createElement('script');
+                    // The wrapper prevents site loaders like RequireJS/AMD from "stealing" the library
+                    script.textContent = `
+                    (function() {
+                        const oldDefine = window.define;
+                        window.define = undefined; 
+                        ${jsText}
+                        window.define = oldDefine;
+                    })();
+                `;
+                    document.head.appendChild(script);
+                }
 
-                // This wrapper tricks the site's 'loader.js' into ignoring JSONEditor
-                script.textContent = `
-                (function() {
-                    const oldDefine = window.define;
-                    window.define = undefined; 
-                    ${jsText}
-                    window.define = oldDefine;
-                })();
-            `;
-                document.head.appendChild(script);
-            }
+                // 3. UI Construction (Styles)
+                GM_addStyle(`
+                .tm-editor-modal { 
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
+                    display: none; z-index: 99999999; padding: 20px; box-sizing: border-box; 
+                }
+                .tm-editor-container { 
+                    background: white; height: 100%; display: flex; 
+                    flex-direction: column; border-radius: 8px; overflow: hidden;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+                }
+                .tm-editor-footer { 
+                    padding: 12px; background: #f4f4f4; border-top: 1px solid #ddd; 
+                    display: flex; justify-content: flex-end; gap: 10px; 
+                }
+                /* CSS Fix for icons missing in Code Mode */
+                .jsoneditor-menu > button::before { font-family: sans-serif !important; font-size: 12px; }
+                .jsoneditor-format::before  { content: "F"; }
+                .jsoneditor-compact::before { content: "C"; }
+                .jsoneditor-repair::before  { content: "R"; }
+            `);
 
-            // 3. UI Construction
-            GM_addStyle(`
-            .tm-editor-modal { 
-                position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
-                display: none; z-index: 99999999; padding: 20px; box-sizing: border-box; 
-            }
-            .tm-editor-container { 
-                background: white; height: 100%; display: flex; 
-                flex-direction: column; border-radius: 8px; overflow: hidden;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            }
-            .tm-editor-footer { 
-                padding: 12px; background: #f4f4f4; border-top: 1px solid #ddd; 
-                display: flex; justify-content: flex-end; gap: 10px; 
-            }
-            .jsoneditor { border: none !important; }
-            .jsoneditor-menu { background-color: #2c3e50 !important; border-bottom: none !important; }
-.jsoneditor-format::before  { content: "F"; }
-        .jsoneditor-compact::before { content: "C"; }
-        .jsoneditor-repair::before  { content: "R"; }
-        .jsoneditor-undo::before    { content: "↶"; }
-        .jsoneditor-redo::before    { content: "↷"; }
-        `);
+                // 4. Create DOM elements
+                modal = document.createElement('div');
+                modal.className = 'tm-editor-modal';
 
-            modal = document.createElement('div');
-            modal.className = 'tm-editor-modal';
-            const container = document.createElement('div');
-            container.className = 'tm-editor-container';
-            const editorDiv = document.createElement('div');
-            editorDiv.style.flex = "1";
-            const footer = document.createElement('div');
-            footer.className = 'tm-editor-footer';
+                const container = document.createElement('div');
+                container.className = 'tm-editor-container';
 
-            const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = 'Cancel';
-            cancelBtn.style.padding = '8px 15px';
-            cancelBtn.style.backgroundColor = 'rgb(0, 122, 204)';
-            cancelBtn.style.fontWeight = 'bold';
-            cancelBtn.onclick = () => { modal.style.display = 'none'; resolveFn(null); };
+                const editorDiv = document.createElement('div');
+                editorDiv.style.flex = "1";
 
-            const saveBtn = document.createElement('button');
-            saveBtn.textContent = 'Apply & Send';
-            saveBtn.style.cssText = 'padding: 8px 15px; background: #007acc; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold;';
-            saveBtn.onclick = () => {
-                const json = editor.get();
-                modal.style.display = 'none';
-                resolveFn(JSON.stringify(json));
-            };
+                const footer = document.createElement('div');
+                footer.className = 'tm-editor-footer';
 
-            footer.append(cancelBtn, saveBtn);
-            container.append(editorDiv, footer);
-            modal.appendChild(container);
-            document.body.appendChild(modal);
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.style.cssText = 'padding: 8px 15px; background: #666; color: white; border: none; cursor: pointer; border-radius: 4px;';
+                cancelBtn.onclick = () => { modal.style.display = 'none'; resolveFn(null); };
 
-            // Initialize using unsafeWindow
-            if (typeof unsafeWindow.JSONEditor === 'function') {
-                editor = new unsafeWindow.JSONEditor(editorDiv, {
-                    mode: 'code',
-                    mainMenuBar: true,
-                    navigationBar: false, // Cleaner look for code mode
-                    statusBar: true,
-                    // Set the theme to a dark Ace standard
-                    aceOptions: {
-                        theme: 'ace/theme/tomorrow_night'
-                    }
-                });
-                return true;
+                const saveBtn = document.createElement('button');
+                saveBtn.textContent = 'Apply & Send';
+                saveBtn.style.cssText = 'padding: 8px 15px; background: #007acc; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold;';
+                saveBtn.onclick = () => {
+                    const json = editor.get();
+                    modal.style.display = 'none';
+                    resolveFn(JSON.stringify(json));
+                };
+
+                footer.append(cancelBtn, saveBtn);
+                container.append(editorDiv, footer);
+                modal.appendChild(container);
+                document.body.appendChild(modal);
+
+                // 5. Wait for the <script> tag to actually parse in the window
+                let attempts = 0;
+                while (typeof unsafeWindow.JSONEditor !== 'function' && attempts < 20) {
+                    await new Promise(r => setTimeout(r, 50));
+                    attempts++;
+                }
+
+                if (typeof unsafeWindow.JSONEditor === 'function') {
+                    editor = new unsafeWindow.JSONEditor(editorDiv, {
+                        mode: 'code',
+                        mainMenuBar: true,
+                        statusBar: true
+                    });
+                    return true;
+                }
+            } catch (e) {
+                console.error("TMUtils: Failed to load UI Editor", e);
             }
             return false;
         }
 
         return {
             open: async (body) => {
-                init();
-
-                // Give the script tag a moment to evaluate if it's the first run
-                let attempts = 0;
-                while (!unsafeWindow.JSONEditor && attempts < 10) {
-                    await new Promise(r => setTimeout(r, 50));
-                    attempts++;
-                }
-
-                if (!unsafeWindow.JSONEditor) {
-                    console.error("Critical: JSONEditor still not found in unsafeWindow.");
-                    return body;
-                }
+                const ready = await init();
+                if (!ready) return body;
 
                 return new Promise(resolve => {
                     resolveFn = resolve;
@@ -1181,7 +1188,6 @@
                     }
                     modal.style.display = 'block';
                     editor.set(data);
-                    // editor.expandAll();
                 });
             }
         };
