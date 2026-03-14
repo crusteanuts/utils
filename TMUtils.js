@@ -1074,13 +1074,19 @@
             });
         }
 
+        function addStyle(css) {
+            const style = document.createElement('style');
+            style.textContent = css;
+            document.head.appendChild(style);
+        }
+
         async function init() {
             if (modal && unsafeWindow.JSONEditor) return true;
 
             try {
                 // 1. Fetch and Inject CSS
                 const cssText = await getResource(CSS_URL);
-                GM_addStyle(cssText);
+                addStyle(cssText);
 
                 // 2. Fetch and Inject JS (with AMD Shield)
                 if (!unsafeWindow.JSONEditor) {
@@ -1099,7 +1105,7 @@
                 }
 
                 // 3. UI Construction (Styles)
-                GM_addStyle(`
+                addStyle(`
                 .tm-editor-modal { 
                     position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
                     display: none; z-index: 99999999; padding: 20px; box-sizing: border-box; 
