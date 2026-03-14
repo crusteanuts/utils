@@ -724,6 +724,7 @@
         const shouldIntercept = config.shouldIntercept || (() => false);
         const onResponse = config.onResponse;
         const onRequest = config.onRequest;
+        let isEditorOpen = false;
 
         // --- INTERNAL XHR DELEGATION BRIDGE ---
         // This allows you to "forget" about XHR entirely. 
@@ -784,16 +785,32 @@
             const options = args[1] || {};
             const url = typeof resource === 'string' ? resource : resource instanceof Request ? resource.url : resource.toString();
 
-            const ctx = { url, options, requestBody: options.body };
+            let ctx = { url, options, requestBody: options.body };
             const interceptionResult = shouldIntercept(ctx);
 
             const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
             const asStream = typeof interceptionResult === 'object' && interceptionResult.asStream;
             const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest; // FIXED: Added this line
 
-            // 1. Request Interceptor
+            // 1. CALL ONREQUEST HOOK (If provided)
+            // This allows you to modify headers or context before anything else happens
+            if (needsInterception && onRequest) {
+                const modifiedCtx = await onRequest(ctx);
+                if (modifiedCtx) ctx = modifiedCtx;
+            }
+
             if (needsInterception && shouldEdit) {
+                if (isEditorOpen) {
+                    console.warn("[Proxy] Editor already active, skipping this concurrent request.");
+                    // Option A: Just let it go through without editing
+                    // return originalFetch.apply(this, args); 
+                    // Option B: Abort it to prevent spam
+                    throw new DOMException('Request suppressed: Editor active.', 'AbortError');
+                }
+
                 try {
+                    isEditorOpen = true
+
                     let currentBody = (args[0] instanceof Request) ? await args[0].clone().text() : args[1]?.body || "";
                     const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
                     const editedBody = await JsonRequestEditor.open(mergedBody);
@@ -808,6 +825,8 @@
                         throw new DOMException('The user aborted a request.', 'AbortError');
                     }
                 } catch (e) {
+                    isEditorOpen = false; // ENSURE LOCK IS RELEASED ON ERROR
+
                     if (e.name === 'AbortError') throw e;
                     console.error("UI Editor Error:", e);
                 }
