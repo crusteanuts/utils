@@ -822,12 +822,14 @@
             // 2. The Actual Fetch
             const response = await originalFetch.apply(this, args);
 
-            console.log("📡 [Network Event]", {
-                url: url,
-                status: response.status,
-                contentType: response.headers.get("content-type"),
-                isStream: !!response.body
-            });
+            if (config?.debug) {
+                console.log("📡 [Network Event]", {
+                    url: url,
+                    status: response.status,
+                    contentType: response.headers.get("content-type"),
+                    isStream: !!response.body
+                });
+            }
 
             if (!needsInterception || !onResponse) return response;
 
@@ -878,16 +880,32 @@
 
                 // 4. Standard JSON Logic
                 const contentType = response.headers.get("content-type") || "";
-                if (contentType.includes("application/json")) {
-                    const data = await response.clone().json();
-                    const modifiedData = await onResponse(data, ctx, response);
-                    const finalBody = JSON.stringify(modifiedData ?? data);
+                // If we flagged this URL as 'needsInterception', we MUST process it
+                if (needsInterception || contentType.includes("application/json")) {
+                    try {
+                        const data = await response.clone().json();
+                        const modifiedData = await onResponse(data, ctx, response);
+                        const finalBody = JSON.stringify(modifiedData ?? data);
 
-                    return new Response(finalBody, {
-                        status: response.status,
-                        statusText: response.statusText,
-                        headers: patchedHeaders
-                    });
+                        return new Response(finalBody, {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: patchedHeaders
+                        });
+                    } catch (e) {
+                        // If it wasn't actually JSON, let's at least try text before giving up
+                        try {
+                            const rawText = await response.clone().text();
+                            const modifiedText = await onResponse(rawText, ctx, response);
+                            return new Response(modifiedText ?? rawText, {
+                                status: response.status,
+                                statusText: response.statusText,
+                                headers: patchedHeaders
+                            });
+                        } catch (textErr) {
+                            console.error("[Proxy] Critical Interceptor Error:", textErr);
+                        }
+                    }
                 }
             } catch (e) {
                 console.error("[Proxy] Critical Interceptor Error:", e);
