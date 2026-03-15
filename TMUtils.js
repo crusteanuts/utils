@@ -426,7 +426,7 @@
         <div style="background: #000; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 200px;">
             ${isVideo
                     ? `<video src="${item.mediaUrl}" controls autoplay style="max-width: 100%; max-height: 70vh; display: block;"></video>`
-                    : `<img src="${item.mediaUrl}" style="max-width: 100%; max-height: 70vh; display: block;" />`
+                    : `<img src="${item.mediaUrl}" download="${item.id}" style="max-width: 100%; max-height: 70vh; display: block;" />`
                 }
         </div>
 
