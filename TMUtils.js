@@ -876,29 +876,39 @@
                     });
                 }
 
-                // 4. Standard JSON/Text Logic (Universal Buffer Fix)
+                // 4. Standard JSON/Text Logic (Unfiltered)
                 if (needsInterception) {
                     try {
                         const responseClone = response.clone();
+                        let rawText = "";
 
-                        // Use arrayBuffer instead of text() to bypass contentType: null issues
-                        const buffer = await responseClone.arrayBuffer();
-                        const rawText = new TextDecoder("utf-8").decode(buffer);
-
-                        // If the 202 is literally empty, don't try to process it
-                        if (!rawText || rawText.trim() === "") {
-                            return response;
+                        try {
+                            const buffer = await responseClone.arrayBuffer();
+                            rawText = new TextDecoder("utf-8").decode(buffer);
+                        } catch (readError) {
+                            console.warn("[Proxy] Could not read body, proceeding with empty string for handler.");
                         }
 
                         let processedData;
+                        let dataToPass;
+
+                        // Try to parse JSON, otherwise use raw text (even if empty "")
                         try {
-                            const json = JSON.parse(rawText);
-                            const modifiedJson = await onResponse(json, ctx, response);
-                            processedData = JSON.stringify(modifiedJson ?? json);
+                            dataToPass = (rawText && rawText.trim()) ? JSON.parse(rawText) : {};
                         } catch (e) {
-                            // If JSON fails (common with 202s), fall back to raw text
-                            const modifiedText = await onResponse(rawText, ctx, response);
-                            processedData = modifiedText ?? rawText;
+                            dataToPass = rawText;
+                        }
+
+                        // ALWAYS call onResponse so your URL-based logic triggers
+                        const modifiedResult = await onResponse(dataToPass, ctx, response);
+
+                        // Prepare the final body for the browser
+                        if (modifiedResult !== undefined && modifiedResult !== null) {
+                            processedData = (typeof modifiedResult === 'object')
+                                ? JSON.stringify(modifiedResult)
+                                : modifiedResult;
+                        } else {
+                            processedData = rawText;
                         }
 
                         return new Response(processedData, {
@@ -907,8 +917,8 @@
                             headers: patchedHeaders
                         });
                     } catch (e) {
-                        console.error("[Proxy] Buffer/Interception Error:", e);
-                        return response; // Fallback to original so the app doesn't break
+                        console.error("[Proxy] Critical Interceptor Error:", e);
+                        return response;
                     }
                 }
             } catch (e) {
