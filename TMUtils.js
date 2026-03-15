@@ -726,8 +726,6 @@
         const onRequest = config.onRequest;
 
         // --- INTERNAL XHR DELEGATION BRIDGE ---
-        // This allows you to "forget" about XHR entirely. 
-        // It turns every XHR into a Fetch call that hits the logic below.
         const OriginalXHR = root.XMLHttpRequest;
         root.XMLHttpRequest = function () {
             const xhr = new OriginalXHR();
@@ -740,22 +738,18 @@
             this.send = async function (body) {
                 _req.body = body;
 
-                // 1. Check if we actually care about this request
                 const ctx = { url: _req.url, options: _req, requestBody: body };
                 const interceptionResult = shouldIntercept(ctx);
-                // Safely check if it's an object AND not null before looking for .intercept
+
+                // FIX: Added null check to prevent "Cannot read properties of null (reading 'intercept')"
                 const needsInterception = (typeof interceptionResult === 'object' && interceptionResult !== null)
                     ? interceptionResult.intercept
                     : !!interceptionResult;
 
-                // 2. Optimization: If no interception is needed, use the native XHR
                 if (!needsInterception) {
-                    // We sync the headers we collected to the native XHR
-                    // Note: open() and setRequestHeader() were already called on 'xhr' in the background
                     return xhr.send(body);
                 }
 
-                // 3. Delegation: Only pivot to Fetch if we are actually modifying something
                 try {
                     const response = await root.fetch(_req.url, {
                         method: _req.method,
@@ -780,8 +774,9 @@
             this.getResponseHeader = (h) => xhr.getResponseHeader(h);
         };
 
-        // --- THE CORE FETCH PROXY (RE-FIXED) ---
-        root.fetch = async function (...args) {
+        // --- THE CORE FETCH PROXY ---
+        root.fetch = async function () {
+            let args = Array.from(arguments);
             const resource = args[0];
             const options = args[1] || {};
             const url = typeof resource === 'string' ? resource : resource instanceof Request ? resource.url : resource.toString();
@@ -789,13 +784,12 @@
             let ctx = { url, options, requestBody: options.body };
             const interceptionResult = shouldIntercept(ctx);
 
-            // 1. Setup Flags
+            // FIX: Added null check here as well for consistency
             const isObj = typeof interceptionResult === 'object' && interceptionResult !== null;
             const needsInterception = isObj ? interceptionResult.intercept : !!interceptionResult;
             const asStream = isObj && interceptionResult.asStream;
             const shouldEdit = isObj && interceptionResult.editRequest;
 
-            // 2. REQUEST INTERCEPTION (shouldEdit logic)
             if (needsInterception && onRequest) {
                 const modifiedCtx = await onRequest(ctx);
                 if (modifiedCtx) ctx = modifiedCtx;
@@ -822,8 +816,17 @@
                 }
             }
 
-            // 3. THE ACTUAL FETCH
+            // 2. The Actual Fetch
             const response = await originalFetch.apply(this, args);
+
+            if (config?.debug) {
+                console.log("📡 [Network Event]", {
+                    url: url,
+                    status: response.status,
+                    contentType: response.headers.get("content-type"),
+                    isStream: !!response.body
+                });
+            }
 
             if (!needsInterception || !onResponse) return response;
 
@@ -831,7 +834,7 @@
             patchedHeaders.delete("content-length");
 
             try {
-                // 4. STREAMING RESPONSE LOGIC (Restored)
+                // 3. Streaming Response Logic
                 if (asStream && response.body) {
                     const reader = response.body.getReader();
                     const encoder = new TextEncoder();
@@ -850,9 +853,12 @@
                                     controller.close();
                                     return;
                                 }
+
                                 const chunkText = decoder.decode(value, { stream: true });
                                 const modifiedChunk = await onResponse(chunkText, ctx, response);
-                                controller.enqueue(encoder.encode(modifiedChunk ?? chunkText));
+                                const output = (modifiedChunk !== undefined && modifiedChunk !== null) ? modifiedChunk : chunkText;
+
+                                controller.enqueue(encoder.encode(output));
                             } catch (err) {
                                 controller.error(err);
                             }
@@ -867,33 +873,41 @@
                     });
                 }
 
-                // 5. STANDARD JSON/TEXT LOGIC (Using Clone)
-                const responseClone = response.clone();
-                const rawText = await responseClone.text();
-                let processedBody;
+                // 4. Standard JSON/Text Logic (Optimized with Clone Fix)
+                if (needsInterception) {
+                    try {
+                        // FIX: We clone the response so we don't 'disturb' the body for the site's logger
+                        const responseClone = response.clone();
+                        const rawText = await responseClone.text();
+                        let processedData;
 
-                try {
-                    const json = JSON.parse(rawText);
-                    const modifiedJson = await onResponse(json, ctx, response);
-                    processedBody = JSON.stringify(modifiedJson ?? json);
-                } catch (e) {
-                    const modifiedText = await onResponse(rawText, ctx, response);
-                    processedBody = modifiedText ?? rawText;
+                        try {
+                            const json = JSON.parse(rawText);
+                            const modifiedJson = await onResponse(json, ctx, response);
+                            processedData = JSON.stringify(modifiedJson ?? json);
+                        } catch (e) {
+                            const modifiedText = await onResponse(rawText, ctx, response);
+                            processedData = modifiedText ?? rawText;
+                        }
+
+                        return new Response(processedData, {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: patchedHeaders
+                        });
+                    } catch (e) {
+                        console.error("[Proxy] Critical Interceptor Error:", e);
+                        return response; // Fallback to original
+                    }
                 }
-
-                return new Response(processedBody, {
-                    status: response.status,
-                    statusText: response.statusText,
-                    headers: patchedHeaders
-                });
-
             } catch (e) {
                 console.error("[Proxy] Critical Interceptor Error:", e);
-                return response; // Fallback to original so the site doesn't crash
             }
+
+            return response;
         };
 
-        return root.fetch
+        return root.fetch;
     }
 
     class FloatingUIManager {
