@@ -821,6 +821,14 @@
 
             // 2. The Actual Fetch
             const response = await originalFetch.apply(this, args);
+
+            console.log("📡 [Network Event]", {
+                url: url,
+                status: response.status,
+                contentType: response.headers.get("content-type"),
+                isStream: !!response.body
+            });
+
             if (!needsInterception || !onResponse) return response;
 
             // PREPARE HEADERS: Remove content-length to prevent hangs after modification
