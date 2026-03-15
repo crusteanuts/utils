@@ -200,8 +200,6 @@
         },
 
         deepMerge(target, source, options) {
-            // Force target and source to be objects. 
-            // If either is a string, the merge will fail or produce the index-error you saw.
             if (typeof target === 'string') {
                 try { target = JSON.parse(target); } catch { target = {}; }
             }
@@ -210,33 +208,50 @@
             }
 
             let output = Object.assign({}, target);
+            let excluded = {}; // <-- The bucket for heavy data
 
-            // 2. PURGE the Target first
+            // 1. PURGE the Target first and save to 'excluded'
             if (options?.exclude) {
                 Object.keys(output).forEach(key => {
                     const val = output[key];
-                    if (typeof options.exclude === 'function') {
-                        if (options.exclude(key, val)) delete output[key];
-                    } else if (options.exclude[key]) {
-                        delete output[key];
+                    const shouldExclude = typeof options.exclude === 'function'
+                        ? options.exclude(key, val)
+                        : !!options.exclude[key];
+
+                    if (shouldExclude) {
+                        excluded[key] = val; // Store it
+                        delete output[key];   // Strip it from UI result
                     }
                 });
             }
 
+            // 2. MERGE the Source
             if (this.isObject(target) && this.isObject(source)) {
                 Object.keys(source).forEach(key => {
-                    if (this.isObject(source[key])) {
-                        if (!(key in target) || !this.isObject(target[key])) {
-                            output[key] = JSON.parse(JSON.stringify(source[key]));
+                    const sVal = source[key];
+                    const tVal = target[key];
+
+                    if (this.isObject(sVal)) {
+                        if (!(key in target) || !this.isObject(tVal)) {
+                            output[key] = JSON.parse(JSON.stringify(sVal));
                         } else {
-                            output[key] = this.deepMerge(target[key], source[key], options);
+                            // Recursive call returns {body, excluded}
+                            const result = this.deepMerge(tVal, sVal, options);
+                            output[key] = result.body;
+
+                            // If sub-objects have exclusions, keep them nested
+                            if (Object.keys(result.excluded).length > 0) {
+                                excluded[key] = result.excluded;
+                            }
                         }
                     } else {
-                        output[key] = source[key];
+                        output[key] = sVal;
                     }
                 });
             }
-            return output;
+
+            // Return the split result
+            return { body: output, excluded };
         },
 
         obfuscatePrompt(prompt) {
@@ -815,10 +830,17 @@
             if (needsInterception && shouldEdit) {
                 try {
                     let currentBody = (args[0] instanceof Request) ? await args[0].clone().text() : args[1]?.body || "";
-                    const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {}, editCfg);
-                    const editedBody = await JsonRequestEditor.open(mergedBody);
+                    const { body: mergedBody, excluded } = Utils.deepMerge(currentBody, interceptionResult.payload || {}, editCfg);
+                    const userEdits = await JsonRequestEditor.open(mergedBody);
 
-                    if (editedBody !== null) {
+                    if (userEdits !== null) {
+                        // 2. The Stitch: Merge excluded data with user edits.
+                        // DeepMerge returns { body: ..., excluded: ... }
+                        const finalMerge = Utils.deepMerge(excluded, userEdits);
+
+                        // 3. Extract the actual data for the network
+                        const editedBody = JSON.stringify(finalMerge.body);
+
                         if (args[0] instanceof Request) {
                             args[0] = new Request(args[0].url, { ...args[0], body: editedBody });
                         } else {
