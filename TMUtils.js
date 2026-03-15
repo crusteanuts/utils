@@ -878,33 +878,32 @@
                     });
                 }
 
-                // 4. Standard JSON Logic
-                const contentType = response.headers.get("content-type") || "";
-                // If we flagged this URL as 'needsInterception', we MUST process it
-                if (needsInterception || contentType.includes("application/json")) {
+                // 4. Standard JSON/Text Logic (Optimized)
+                if (needsInterception) {
                     try {
-                        const data = await response.clone().json();
-                        const modifiedData = await onResponse(data, ctx, response);
-                        const finalBody = JSON.stringify(modifiedData ?? data);
+                        // Read the text once. This is the safest way.
+                        const rawText = await response.text();
+                        let processedData;
 
-                        return new Response(finalBody, {
+                        // Try to treat it as JSON first
+                        try {
+                            const json = JSON.parse(rawText);
+                            processedData = await onResponse(json, ctx, response);
+                            // If onResponse returns something, use it; otherwise stay as JSON string
+                            processedData = JSON.stringify(processedData ?? json);
+                        } catch (e) {
+                            // Not JSON? Treat as raw text
+                            const modifiedText = await onResponse(rawText, ctx, response);
+                            processedData = modifiedText ?? rawText;
+                        }
+
+                        return new Response(processedData, {
                             status: response.status,
                             statusText: response.statusText,
                             headers: patchedHeaders
                         });
                     } catch (e) {
-                        // If it wasn't actually JSON, let's at least try text before giving up
-                        try {
-                            const rawText = await response.clone().text();
-                            const modifiedText = await onResponse(rawText, ctx, response);
-                            return new Response(modifiedText ?? rawText, {
-                                status: response.status,
-                                statusText: response.statusText,
-                                headers: patchedHeaders
-                            });
-                        } catch (textErr) {
-                            console.error("[Proxy] Critical Interceptor Error:", textErr);
-                        }
+                        console.error("[Proxy] Critical Interceptor Error:", e);
                     }
                 }
             } catch (e) {
