@@ -743,7 +743,10 @@
                 // 1. Check if we actually care about this request
                 const ctx = { url: _req.url, options: _req, requestBody: body };
                 const interceptionResult = shouldIntercept(ctx);
-                const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
+                // Safely check if it's an object AND not null before looking for .intercept
+                const needsInterception = (typeof interceptionResult === 'object' && interceptionResult !== null)
+                    ? interceptionResult.intercept
+                    : !!interceptionResult;
 
                 // 2. Optimization: If no interception is needed, use the native XHR
                 if (!needsInterception) {
