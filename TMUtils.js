@@ -780,9 +780,8 @@
             this.getResponseHeader = (h) => xhr.getResponseHeader(h);
         };
 
-        // --- THE CORE FETCH PROXY ---
-        root.fetch = async function () {
-            let args = Array.from(arguments);
+        // --- THE CORE FETCH PROXY (RE-FIXED) ---
+        root.fetch = async function (...args) {
             const resource = args[0];
             const options = args[1] || {};
             const url = typeof resource === 'string' ? resource : resource instanceof Request ? resource.url : resource.toString();
@@ -790,12 +789,13 @@
             let ctx = { url, options, requestBody: options.body };
             const interceptionResult = shouldIntercept(ctx);
 
-            const needsInterception = typeof interceptionResult === 'object' ? interceptionResult.intercept : !!interceptionResult;
-            const asStream = typeof interceptionResult === 'object' && interceptionResult.asStream;
-            const shouldEdit = typeof interceptionResult === 'object' && interceptionResult.editRequest; // FIXED: Added this line
+            // 1. Setup Flags
+            const isObj = typeof interceptionResult === 'object' && interceptionResult !== null;
+            const needsInterception = isObj ? interceptionResult.intercept : !!interceptionResult;
+            const asStream = isObj && interceptionResult.asStream;
+            const shouldEdit = isObj && interceptionResult.editRequest;
 
-            // 1. CALL ONREQUEST HOOK (If provided)
-            // This allows you to modify headers or context before anything else happens
+            // 2. REQUEST INTERCEPTION (shouldEdit logic)
             if (needsInterception && onRequest) {
                 const modifiedCtx = await onRequest(ctx);
                 if (modifiedCtx) ctx = modifiedCtx;
@@ -822,26 +822,16 @@
                 }
             }
 
-            // 2. The Actual Fetch
+            // 3. THE ACTUAL FETCH
             const response = await originalFetch.apply(this, args);
-
-            if (config?.debug) {
-                console.log("📡 [Network Event]", {
-                    url: url,
-                    status: response.status,
-                    contentType: response.headers.get("content-type"),
-                    isStream: !!response.body
-                });
-            }
 
             if (!needsInterception || !onResponse) return response;
 
-            // PREPARE HEADERS: Remove content-length to prevent hangs after modification
             const patchedHeaders = new Headers(response.headers);
             patchedHeaders.delete("content-length");
 
             try {
-                // 3. Streaming Response Logic
+                // 4. STREAMING RESPONSE LOGIC (Restored)
                 if (asStream && response.body) {
                     const reader = response.body.getReader();
                     const encoder = new TextEncoder();
@@ -851,7 +841,6 @@
                         async pull(controller) {
                             try {
                                 const { done, value } = await reader.read();
-
                                 if (done) {
                                     const finalChunk = decoder.decode();
                                     if (finalChunk) {
@@ -861,12 +850,9 @@
                                     controller.close();
                                     return;
                                 }
-
                                 const chunkText = decoder.decode(value, { stream: true });
                                 const modifiedChunk = await onResponse(chunkText, ctx, response);
-                                const output = (modifiedChunk !== undefined && modifiedChunk !== null) ? modifiedChunk : chunkText;
-
-                                controller.enqueue(encoder.encode(output));
+                                controller.enqueue(encoder.encode(modifiedChunk ?? chunkText));
                             } catch (err) {
                                 controller.error(err);
                             }
@@ -881,39 +867,30 @@
                     });
                 }
 
-                // 4. Standard JSON/Text Logic (Optimized)
-                if (needsInterception) {
-                    try {
-                        // Read the text once. This is the safest way.
-                        const rawText = await response.text();
-                        let processedData;
+                // 5. STANDARD JSON/TEXT LOGIC (Using Clone)
+                const responseClone = response.clone();
+                const rawText = await responseClone.text();
+                let processedBody;
 
-                        // Try to treat it as JSON first
-                        try {
-                            const json = JSON.parse(rawText);
-                            processedData = await onResponse(json, ctx, response);
-                            // If onResponse returns something, use it; otherwise stay as JSON string
-                            processedData = JSON.stringify(processedData ?? json);
-                        } catch (e) {
-                            // Not JSON? Treat as raw text
-                            const modifiedText = await onResponse(rawText, ctx, response);
-                            processedData = modifiedText ?? rawText;
-                        }
-
-                        return new Response(processedData, {
-                            status: response.status,
-                            statusText: response.statusText,
-                            headers: patchedHeaders
-                        });
-                    } catch (e) {
-                        console.error("[Proxy] Critical Interceptor Error:", e);
-                    }
+                try {
+                    const json = JSON.parse(rawText);
+                    const modifiedJson = await onResponse(json, ctx, response);
+                    processedBody = JSON.stringify(modifiedJson ?? json);
+                } catch (e) {
+                    const modifiedText = await onResponse(rawText, ctx, response);
+                    processedBody = modifiedText ?? rawText;
                 }
+
+                return new Response(processedBody, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: patchedHeaders
+                });
+
             } catch (e) {
                 console.error("[Proxy] Critical Interceptor Error:", e);
+                return response; // Fallback to original so the site doesn't crash
             }
-
-            return response;
         };
 
         return root.fetch
