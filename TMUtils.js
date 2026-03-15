@@ -876,19 +876,27 @@
                     });
                 }
 
-                // 4. Standard JSON/Text Logic (Optimized with Clone Fix)
+                // 4. Standard JSON/Text Logic (Universal Buffer Fix)
                 if (needsInterception) {
                     try {
-                        // FIX: We clone the response so we don't 'disturb' the body for the site's logger
                         const responseClone = response.clone();
-                        const rawText = await responseClone.text();
-                        let processedData;
 
+                        // Use arrayBuffer instead of text() to bypass contentType: null issues
+                        const buffer = await responseClone.arrayBuffer();
+                        const rawText = new TextDecoder("utf-8").decode(buffer);
+
+                        // If the 202 is literally empty, don't try to process it
+                        if (!rawText || rawText.trim() === "") {
+                            return response;
+                        }
+
+                        let processedData;
                         try {
                             const json = JSON.parse(rawText);
                             const modifiedJson = await onResponse(json, ctx, response);
                             processedData = JSON.stringify(modifiedJson ?? json);
                         } catch (e) {
+                            // If JSON fails (common with 202s), fall back to raw text
                             const modifiedText = await onResponse(rawText, ctx, response);
                             processedData = modifiedText ?? rawText;
                         }
@@ -899,8 +907,8 @@
                             headers: patchedHeaders
                         });
                     } catch (e) {
-                        console.error("[Proxy] Critical Interceptor Error:", e);
-                        return response; // Fallback to original
+                        console.error("[Proxy] Buffer/Interception Error:", e);
+                        return response; // Fallback to original so the app doesn't break
                     }
                 }
             } catch (e) {
