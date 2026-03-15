@@ -199,7 +199,7 @@
             return (item && typeof item === 'object' && !Array.isArray(item));
         },
 
-        deepMerge(target, source) {
+        deepMerge(target, source, options) {
             // Force target and source to be objects. 
             // If either is a string, the merge will fail or produce the index-error you saw.
             if (typeof target === 'string') {
@@ -211,13 +211,25 @@
 
             let output = Object.assign({}, target);
 
+            // 2. PURGE the Target first
+            if (options?.exclude) {
+                Object.keys(output).forEach(key => {
+                    const val = output[key];
+                    if (typeof options.exclude === 'function') {
+                        if (options.exclude(key, val)) delete output[key];
+                    } else if (options.exclude[key]) {
+                        delete output[key];
+                    }
+                });
+            }
+
             if (this.isObject(target) && this.isObject(source)) {
                 Object.keys(source).forEach(key => {
                     if (this.isObject(source[key])) {
                         if (!(key in target) || !this.isObject(target[key])) {
                             output[key] = JSON.parse(JSON.stringify(source[key]));
                         } else {
-                            output[key] = this.deepMerge(target[key], source[key]);
+                            output[key] = this.deepMerge(target[key], source[key], options);
                         }
                     } else {
                         output[key] = source[key];
@@ -791,7 +803,9 @@
             const needsInterception = isObj ? !!interceptionResult.intercept : !!interceptionResult;
 
             const asStream = isObj && interceptionResult.asStream;
-            const shouldEdit = isObj && interceptionResult.editRequest;
+            // This captures either 'true' OR the object { shouldEdit: true, exclude: ... }
+            const editCfg = isObj ? interceptionResult.editRequest : null;
+            const shouldEdit = isObj ? !!editCfg : false;
 
             if (needsInterception && onRequest) {
                 const modifiedCtx = await onRequest(ctx);
@@ -801,7 +815,7 @@
             if (needsInterception && shouldEdit) {
                 try {
                     let currentBody = (args[0] instanceof Request) ? await args[0].clone().text() : args[1]?.body || "";
-                    const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {});
+                    const mergedBody = Utils.deepMerge(currentBody, interceptionResult.payload || {}, editCfg);
                     const editedBody = await JsonRequestEditor.open(mergedBody);
 
                     if (editedBody !== null) {
