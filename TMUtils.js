@@ -784,9 +784,12 @@
             let ctx = { url, options, requestBody: options.body };
             const interceptionResult = shouldIntercept(ctx);
 
-            // FIX: Added null check here as well for consistency
+            // --- THE NORMALIZATION FIX ---
+            // If it's an object, we check .intercept. 
+            // If it's a boolean (like your regex result), we just use the boolean itself.
             const isObj = typeof interceptionResult === 'object' && interceptionResult !== null;
-            const needsInterception = isObj ? interceptionResult.intercept : !!interceptionResult;
+            const needsInterception = isObj ? !!interceptionResult.intercept : !!interceptionResult;
+
             const asStream = isObj && interceptionResult.asStream;
             const shouldEdit = isObj && interceptionResult.editRequest;
 
