@@ -339,8 +339,8 @@
                     if (typeof filterFn === 'function') result = result.filter(filterFn);
 
                     result.sort((a, b) => {
-                        a[sortField] = a.createdAtTimestamp || a.created_at || a.createdAt || a[sortField];
-                        b[sortField] = b.createdAtTimestamp || b.created_at || b.createdAt || b[sortField];
+                        a[sortField] = a.createdAtTimestamp || a.created_at || a.createdAt || a.createTime || a[sortField];
+                        b[sortField] = b.createdAtTimestamp || b.created_at || b.createdAt || b.createTime || b[sortField];
 
                         if (!a?.[sortField] || !b?.[sortField]) return 0;
                         const aDate = new Date(a[sortField]);
