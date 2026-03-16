@@ -494,6 +494,19 @@
 
             content.innerHTML = '';
 
+            // --- 1. SET UP THE OBSERVER ---
+            const imageObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        // Move the heavy Base64 from the Getter to the real src
+                        img.src = img.dataset.lazy;
+                        img.style.opacity = "1";
+                        observer.unobserve(img); // Stop watching once loaded
+                    }
+                });
+            }, { root: content, rootMargin: '50px' });
+
             if (!paginated.length) {
                 content.innerHTML = '<i style="padding:10px; color:#666;">No items found.</i>';
             } else {
@@ -523,12 +536,18 @@
     <div style="font-size: 11px; color: #007bff; text-transform: uppercase;">${item.type}</div>
 `;
 
-                    // Render thumbnail if it exists
+                    // --- 2. LAZY RENDER THUMBNAIL ---
                     if (item.thumbnail) {
                         const img = document.createElement('img');
-                        img.src = item.thumbnail;
-                        img.style.cssText = 'width:80px; height:auto; margin-top:5px; border-radius:4px; display:block;';
+                        // We access the getter here, but ONLY to store it in dataset
+                        img.dataset.lazy = item.thumbnail;
+
+                        // Styling: Start invisible to prevent "flicker" and save GPU
+                        img.style.cssText = 'width:80px; height:auto; margin-top:5px; border-radius:4px; display:block; background:#f0f0f0; min-height:50px; opacity:0; transition: opacity 0.3s;';
+
                         div.appendChild(img);
+                        // Start watching this image
+                        imageObserver.observe(img);
                     }
 
                     if (renderItemContent) renderItemContent(div, item);
