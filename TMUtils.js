@@ -634,12 +634,36 @@
                 }
 
                 actions.appendChild(makeBtn('📤', 'Export', async () => {
-                    const data = await store.getAll();
-                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = exportFileName;
-                    a.click();
+                    const db = await store._open();
+                    const tx = db.transaction(store.storeName, 'readonly');
+                    const idbStore = tx.objectStore(store.storeName);
+                    const cursorReq = idbStore.openCursor();
+
+                    const chunks = [];
+                    chunks.push(new Blob(["[\n"], { type: 'application/json' }));
+                    let first = true;
+
+                    cursorReq.onsuccess = (e) => {
+                        const cursor = e.target.result;
+                        if (cursor) {
+                            const prefix = first ? "" : ",\n";
+                            first = false;
+                            // No formatting (null, 2) = smaller file, less memory used
+                            const itemString = prefix + JSON.stringify(cursor.value);
+                            chunks.push(new Blob([itemString], { type: 'application/json' }));
+                            cursor.continue();
+                        } else {
+                            chunks.push(new Blob(["\n]"], { type: 'application/json' }));
+                            const finalBlob = new Blob(chunks, { type: 'application/json' });
+                            const url = URL.createObjectURL(finalBlob);
+
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = exportFileName;
+                            a.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 60000);
+                        }
+                    };
                 }));
 
                 actions.appendChild(makeBtn('📥', 'Import', () => {
@@ -649,9 +673,21 @@
                     input.onchange = async e => {
                         const file = e.target.files[0];
                         if (!file) return;
-                        const text = await file.text();
-                        const items = JSON.parse(text);
-                        await this.bulkImport(items);
+
+                        try {
+                            // Using a stream-friendly approach for large files
+                            const text = await file.text();
+                            const items = JSON.parse(text);
+
+                            // Pass to bulkImport
+                            await this.bulkImport(items);
+
+                            // Reset input so you can import the same file twice if needed
+                            input.value = '';
+                        } catch (err) {
+                            console.error("Import Parse Error:", err);
+                            alert("Failed to parse JSON. The file might be too large for the browser's string limit.");
+                        }
                     };
                     input.click();
                 }));
@@ -736,11 +772,31 @@
 
             async bulkImport(items) {
                 if (!Array.isArray(items)) return;
+
+                const db = await store._open();
+                // Use a single transaction for the whole loop for MASSIVE speed gains
+                const tx = db.transaction(store.storeName, 'readwrite');
+                const idbStore = tx.objectStore(store.storeName);
+
                 for (const item of items) {
-                    if (item?.id) await store.put(item);
+                    if (item?.id) {
+                        // We don't 'await' inside the loop to allow IndexedDB to 
+                        // process requests in parallel (much faster)
+                        idbStore.put(item);
+                    }
                 }
-                dispatchUpdate();
-                if (typeof Utils !== 'undefined') Utils.showSnackbarSuccess(`✅ Items imported: ${items.length}`);
+
+                // Return a promise that resolves when the whole transaction is finished
+                return new Promise((resolve, reject) => {
+                    tx.oncomplete = () => {
+                        dispatchUpdate();
+                        if (typeof Utils !== 'undefined') {
+                            Utils.showSnackbarSuccess(`✅ Items imported: ${items.length}`);
+                        }
+                        resolve();
+                    };
+                    tx.onerror = (e) => reject(e.target.error);
+                });
             }
         };
     }
