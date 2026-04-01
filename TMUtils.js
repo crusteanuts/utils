@@ -834,26 +834,33 @@
             const self = this;
             const _req = { method: 'GET', url: '', headers: {}, body: null };
 
-            // --- ADD THESE THREE METHODS ---
-            // This allows Axios and other libraries to call .addEventListener()
+            // 1. PROXY THE UPLOAD OBJECT
+            this.upload = xhr.upload;
+
+            // 2. DYNAMIC PROPERTY BINDING (Fixes Preflight & Configuration)
+            // This ensures when the page sets xhr.responseType, it goes to the REAL xhr.
+            const props = [
+                'readyState', 'response', 'responseText', 'responseType', 'responseURL',
+                'responseXML', 'status', 'statusText', 'timeout', 'withCredentials'
+            ];
+
+            props.forEach(prop => {
+                Object.defineProperty(self, prop, {
+                    get: () => xhr[prop],
+                    set: (val) => { xhr[prop] = val; },
+                    configurable: true
+                });
+            });
+
+            // 3. EVENT DELEGATION
             this.addEventListener = (...args) => xhr.addEventListener(...args);
             this.removeEventListener = (...args) => xhr.removeEventListener(...args);
             this.dispatchEvent = (...args) => xhr.dispatchEvent(...args);
 
-            const syncProps = () => {
-                try {
-                    self.status = xhr.status;
-                    self.statusText = xhr.statusText;
-                    self.readyState = xhr.readyState;
-                    self.response = xhr.response;
-                    self.responseText = xhr.responseText;
-                } catch (e) { }
-            };
-
-            ['load', 'loadstart', 'loadend', 'error', 'abort', 'timeout', 'progress', 'readystatechange'].forEach(evtName => {
+            // Sync old-school inline events (onload, onerror, etc.)
+            const eventTypes = ['load', 'loadstart', 'loadend', 'error', 'abort', 'timeout', 'progress', 'readystatechange'];
+            eventTypes.forEach(evtName => {
                 xhr[`on${evtName}`] = (event) => {
-                    syncProps();
-                    // Call the inline handler (e.g., xhr.onload = ...)
                     if (typeof self[`on${evtName}`] === 'function') {
                         self[`on${evtName}`](event);
                     }
@@ -871,7 +878,8 @@
                 return xhr.setRequestHeader(k, v);
             };
 
-            this.send = async function (body) {
+            // 4. STANDARD FUNCTION SIGNATURE (Not async)
+            this.send = function (body) {
                 _req.body = body;
                 const ctx = { url: _req.url, options: _req, requestBody: body };
                 const interceptionResult = shouldIntercept(ctx);
@@ -881,15 +889,39 @@
                     : !!interceptionResult;
 
                 if (!needsInterception) {
-                    // This now works because the Event Bridge above is active
                     return xhr.send(body);
                 }
 
-                // ... Your existing manual fetch interception logic ...
-                // (Make sure your manual logic also sets self.readyState = 4 and calls self.onload)
+                // We wrap the async logic so send() returns undefined immediately, 
+                // mimicking standard browser behavior.
+                (async () => {
+                    try {
+                        // If you intercept XHR, you are likely fulfilling it with root.fetch
+                        const response = await root.fetch(_req.url, {
+                            method: _req.method,
+                            headers: _req.headers,
+                            body: _req.body
+                        });
+
+                        const text = await response.text();
+
+                        // Override the getters for this specific intercepted request
+                        Object.defineProperty(self, 'status', { value: response.status });
+                        Object.defineProperty(self, 'statusText', { value: response.statusText });
+                        Object.defineProperty(self, 'responseText', { value: text });
+                        Object.defineProperty(self, 'response', { value: text });
+                        Object.defineProperty(self, 'readyState', { value: 4 });
+
+                        // Trigger standard completion events manually
+                        self.onreadystatechange?.();
+                        self.onload?.();
+
+                    } catch (err) {
+                        self.onerror?.(err);
+                    }
+                })();
             };
 
-            // Pass through helpers
             this.getAllResponseHeaders = () => xhr.getAllResponseHeaders();
             this.getResponseHeader = (h) => xhr.getResponseHeader(h);
             this.abort = () => xhr.abort();
