@@ -834,7 +834,12 @@
             const self = this;
             const _req = { method: 'GET', url: '', headers: {}, body: null };
 
-            // 1. SYNC PROPERTIES: Ensure the proxy has the same data as the real XHR
+            // --- ADD THESE THREE METHODS ---
+            // This allows Axios and other libraries to call .addEventListener()
+            this.addEventListener = (...args) => xhr.addEventListener(...args);
+            this.removeEventListener = (...args) => xhr.removeEventListener(...args);
+            this.dispatchEvent = (...args) => xhr.dispatchEvent(...args);
+
             const syncProps = () => {
                 try {
                     self.status = xhr.status;
@@ -842,17 +847,16 @@
                     self.readyState = xhr.readyState;
                     self.response = xhr.response;
                     self.responseText = xhr.responseText;
-                    self.responseXML = xhr.responseXML;
-                } catch (e) { /* Some properties may be inaccessible depending on state */ }
+                } catch (e) { }
             };
 
-            // 2. EVENT BRIDGE: Forward all events from the real XHR to the proxy
             ['load', 'loadstart', 'loadend', 'error', 'abort', 'timeout', 'progress', 'readystatechange'].forEach(evtName => {
                 xhr[`on${evtName}`] = (event) => {
                     syncProps();
-                    if (self[`on${evtName}`]) self[`on${evtName}`](event);
-                    // Also trigger addEventListener listeners
-                    self.dispatchEvent(new CustomEvent(evtName, { detail: event }));
+                    // Call the inline handler (e.g., xhr.onload = ...)
+                    if (typeof self[`on${evtName}`] === 'function') {
+                        self[`on${evtName}`](event);
+                    }
                 };
             });
 
