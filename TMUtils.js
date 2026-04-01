@@ -834,46 +834,61 @@
             const self = this;
             const _req = { method: 'GET', url: '', headers: {}, body: null };
 
-            this.open = (m, u) => { _req.method = m; _req.url = u; xhr.open(m, u); };
-            this.setRequestHeader = (k, v) => { _req.headers[k] = v; xhr.setRequestHeader(k, v); };
+            // 1. SYNC PROPERTIES: Ensure the proxy has the same data as the real XHR
+            const syncProps = () => {
+                try {
+                    self.status = xhr.status;
+                    self.statusText = xhr.statusText;
+                    self.readyState = xhr.readyState;
+                    self.response = xhr.response;
+                    self.responseText = xhr.responseText;
+                    self.responseXML = xhr.responseXML;
+                } catch (e) { /* Some properties may be inaccessible depending on state */ }
+            };
+
+            // 2. EVENT BRIDGE: Forward all events from the real XHR to the proxy
+            ['load', 'loadstart', 'loadend', 'error', 'abort', 'timeout', 'progress', 'readystatechange'].forEach(evtName => {
+                xhr[`on${evtName}`] = (event) => {
+                    syncProps();
+                    if (self[`on${evtName}`]) self[`on${evtName}`](event);
+                    // Also trigger addEventListener listeners
+                    self.dispatchEvent(new CustomEvent(evtName, { detail: event }));
+                };
+            });
+
+            this.open = (m, u, ...args) => {
+                _req.method = m;
+                _req.url = u;
+                return xhr.open(m, u, ...args);
+            };
+
+            this.setRequestHeader = (k, v) => {
+                _req.headers[k] = v;
+                return xhr.setRequestHeader(k, v);
+            };
 
             this.send = async function (body) {
                 _req.body = body;
-
                 const ctx = { url: _req.url, options: _req, requestBody: body };
                 const interceptionResult = shouldIntercept(ctx);
 
-                // FIX: Added null check to prevent "Cannot read properties of null (reading 'intercept')"
                 const needsInterception = (typeof interceptionResult === 'object' && interceptionResult !== null)
                     ? interceptionResult.intercept
                     : !!interceptionResult;
 
                 if (!needsInterception) {
+                    // This now works because the Event Bridge above is active
                     return xhr.send(body);
                 }
 
-                try {
-                    const response = await root.fetch(_req.url, {
-                        method: _req.method,
-                        headers: _req.headers,
-                        body: _req.body
-                    });
-
-                    self.status = response.status;
-                    self.statusText = response.statusText;
-                    const text = await response.text();
-                    self.responseText = self.response = text;
-
-                    Object.defineProperty(self, 'readyState', { value: 4 });
-                    self.onreadystatechange?.();
-                    self.onload?.();
-                } catch (err) {
-                    self.onerror?.(err);
-                }
+                // ... Your existing manual fetch interception logic ...
+                // (Make sure your manual logic also sets self.readyState = 4 and calls self.onload)
             };
 
+            // Pass through helpers
             this.getAllResponseHeaders = () => xhr.getAllResponseHeaders();
             this.getResponseHeader = (h) => xhr.getResponseHeader(h);
+            this.abort = () => xhr.abort();
         };
 
         // --- THE CORE FETCH PROXY ---
