@@ -952,7 +952,7 @@
             const shouldEdit = isObj ? !!editCfg : false;
 
             if (needsInterception && onRequest) {
-                if (isShortCircuit) return onRequest(ctx);
+                if (isShortCircuit) return await onRequest(ctx);
 
                 const modifiedCtx = await onRequest(ctx);
                 if (modifiedCtx) ctx = modifiedCtx;
