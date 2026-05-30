@@ -943,12 +943,17 @@
             const isObj = typeof interceptionResult === 'object' && interceptionResult !== null;
             const needsInterception = isObj ? !!interceptionResult.intercept : !!interceptionResult;
 
+            // ✨ NEW: Check if the user wants to short-circuit the request entirely
+            const isShortCircuit = isObj && !!interceptionResult.shortCircuit;
+
             const asStream = isObj && interceptionResult.asStream;
             // This captures either 'true' OR the object { shouldEdit: true, exclude: ... }
             const editCfg = isObj ? interceptionResult.editRequest : null;
             const shouldEdit = isObj ? !!editCfg : false;
 
             if (needsInterception && onRequest) {
+                if (isShortCircuit) return onRequest(ctx);
+
                 const modifiedCtx = await onRequest(ctx);
                 if (modifiedCtx) ctx = modifiedCtx;
             }
